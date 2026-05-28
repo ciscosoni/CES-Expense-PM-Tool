@@ -285,3 +285,37 @@ export interface DaResult {
   total: { amount: string; currency: string };
   breakdown: DaDayBreakdown[];
 }
+
+// ---- Expenses + Reimbursements ----
+
+export type ExpenseCategory =
+  | 'TRAVEL'
+  | 'LODGING'
+  | 'MEALS'
+  | 'LOCAL_CONVEYANCE'
+  | 'COMMUNICATION'
+  | 'MATERIALS'
+  | 'OTHER';
+
+export type ExpenseStatus = 'DRAFT' | 'SUBMITTED' | 'APPROVED' | 'REJECTED' | 'REIMBURSED';
+
+export interface Expense {
+  id: string;
+  userId: string;
+  projectId: string;
+  tripId: string | null;
+  category: ExpenseCategory;
+  amount: string;
+  currency: string;
+  incurredOn: string;
+  receiptUrl: string | null;
+  notes: string | null;
+  status: ExpenseStatus;
+  approverId: string | null;
+  approvedAt: string | null;
+  rejectReason: string | null;
+  user: UserBrief;
+  project: { id: string; code: string; name: string; pmId: string };
+  trip: { id: string; actualStart: string; actualEnd: string | null } | null;
+  approver: UserBrief | null;
+}

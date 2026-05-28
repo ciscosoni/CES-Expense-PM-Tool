@@ -32,6 +32,9 @@ model User {
   managedProjects  Project[]       @relation("ProjectPM")
   travelRequests   TravelRequest[] @relation("TravelRequester")
   approvedTravels  TravelRequest[] @relation("TravelApprover")
+  expenses         Expense[]       @relation("ExpenseUser")
+  approvedExpenses Expense[]       @relation("ExpenseApprover")
+  reimbursements   Reimbursement[] @relation("ReimbursementUser")
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
   deletedAt     DateTime?
@@ -201,6 +204,7 @@ model Project {
   tasks                Task[]
   allocations          Allocation[]
   travelRequests       TravelRequest[]
+  expenses             Expense[]
   createdAt            DateTime        @default(now())
   updatedAt            DateTime        @updatedAt
   deletedAt            DateTime?
@@ -371,8 +375,83 @@ model Trip {
   travelActualCost         Decimal        @default(0) @db.Decimal(14, 4)
   lodgingActualCost        Decimal        @default(0) @db.Decimal(14, 4)
   localConveyanceActualCost Decimal       @default(0) @db.Decimal(14, 4)
+  expenses                 Expense[]
   createdAt                DateTime       @default(now())
   updatedAt                DateTime       @updatedAt
+}
+
+// ---------- Expenses & reimbursements ----------
+
+enum ExpenseCategory {
+  TRAVEL
+  LODGING
+  MEALS
+  LOCAL_CONVEYANCE
+  COMMUNICATION
+  MATERIALS
+  OTHER
+}
+
+enum ExpenseStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  REIMBURSED
+}
+
+model Expense {
+  id              String          @id @default(uuid()) @db.Uuid
+  userId          String          @db.Uuid
+  user            User            @relation("ExpenseUser", fields: [userId], references: [id])
+  projectId       String          @db.Uuid
+  project         Project         @relation(fields: [projectId], references: [id])
+  tripId          String?         @db.Uuid
+  trip            Trip?           @relation(fields: [tripId], references: [id])
+  category        ExpenseCategory
+  amount          Decimal         @db.Decimal(14, 4)
+  currency        String          @db.Char(3)
+  incurredOn      DateTime        @db.Date
+  /// Placeholder for receipt file URL; full Receipt entity with EXIF/pHash/OCR
+  /// lands in Slice 1C-γ.
+  receiptUrl      String?
+  notes           String?
+  status          ExpenseStatus   @default(DRAFT)
+  approverId      String?         @db.Uuid
+  approver        User?           @relation("ExpenseApprover", fields: [approverId], references: [id])
+  approvedAt      DateTime?
+  rejectReason    String?
+  reimbursementId String?         @db.Uuid
+  reimbursement   Reimbursement?  @relation(fields: [reimbursementId], references: [id])
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  deletedAt       DateTime?
+
+  @@index([userId, status])
+  @@index([projectId, status])
+}
+
+enum ReimbursementStatus {
+  PENDING
+  APPROVED
+  PAID
+  CANCELLED
+}
+
+model Reimbursement {
+  id          String              @id @default(uuid()) @db.Uuid
+  userId      String              @db.Uuid
+  user        User                @relation("ReimbursementUser", fields: [userId], references: [id])
+  totalAmount Decimal             @db.Decimal(14, 4)
+  currency    String              @db.Char(3)
+  status      ReimbursementStatus @default(PENDING)
+  paidOn      DateTime?           @db.Date
+  reference   String?
+  expenses    Expense[]
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@index([userId, status])
 }
 
 // ---------- Audit log (soft-delete + history) ----------

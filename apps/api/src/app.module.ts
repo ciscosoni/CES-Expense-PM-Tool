@@ -16,6 +16,7 @@ import { ProjectsModule } from './projects/projects.module.js';
 import { TasksModule } from './tasks/tasks.module.js';
 import { AllocationsModule } from './allocations/allocations.module.js';
 import { TravelModule } from './travel/travel.module.js';
+import { ExpensesModule } from './expenses/expenses.module.js';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { TravelModule } from './travel/travel.module.js';
     TasksModule,
     AllocationsModule,
     TravelModule,
+    ExpensesModule,
   ],
   controllers: [HealthController],
 })

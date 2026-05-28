@@ -1,11 +1,297 @@
-import { ComingSoon } from '@/components/coming-soon';
+'use client';
 
-export default function ExpensesStub() {
+import * as React from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import { Plus, Send } from 'lucide-react';
+import { toast } from 'sonner';
+import { AdminShell } from '@/components/admin-shell';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableEmpty,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { ApiError, api } from '@/lib/api';
+import { formatDate, formatMoney } from '@/lib/format';
+import type { Expense, ExpenseCategory, ExpenseStatus, ProjectRow } from '@/lib/types';
+
+const CATEGORIES: ExpenseCategory[] = [
+  'TRAVEL',
+  'LODGING',
+  'MEALS',
+  'LOCAL_CONVEYANCE',
+  'COMMUNICATION',
+  'MATERIALS',
+  'OTHER',
+];
+
+const STATUS_COLOR: Record<ExpenseStatus, string> = {
+  DRAFT: 'bg-neutral-100 text-neutral-700 border-neutral-200',
+  SUBMITTED: 'bg-amber-100 text-amber-700 border-amber-200',
+  APPROVED: 'bg-blue-100 text-blue-700 border-blue-200',
+  REJECTED: 'bg-red-100 text-red-700 border-red-200',
+  REIMBURSED: 'bg-emerald-100 text-emerald-700 border-emerald-200',
+};
+
+export default function MyExpensesPage() {
+  const qc = useQueryClient();
+  const expenses = useQuery({
+    queryKey: ['expenses', 'mine'],
+    queryFn: () => api.get<Expense[]>('/expenses/mine'),
+  });
+
+  const submit = useMutation({
+    mutationFn: (id: string) => api.post(`/expenses/${id}/submit`),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['expenses'] });
+      toast.success('Submitted for approval');
+    },
+    onError: (err: unknown) => toast.error(err instanceof ApiError ? err.message : String(err)),
+  });
+
+  const totalPending = expenses.data
+    ?.filter((e) => ['SUBMITTED', 'APPROVED'].includes(e.status))
+    .reduce((s, e) => s + Number(e.amount), 0);
+
   return (
-    <ComingSoon
-      title="Expenses"
-      phase="Slice 1C"
-      summary="Expense submissions with receipt EXIF + perceptual hash duplicate detection + OCR amount validation."
-    />
+    <AdminShell
+      title="My Expenses"
+      description={
+        <span className="text-sm">
+          You have{' '}
+          <span className="font-mono font-medium">
+            {expenses.data?.filter((e) => e.status === 'SUBMITTED').length ?? 0}
+          </span>{' '}
+          awaiting approval,{' '}
+          <span className="font-mono font-medium">
+            {totalPending?.toLocaleString('en-IN') ?? '0'}
+          </span>{' '}
+          INR pending payout.
+        </span>
+      }
+      actions={<NewExpenseDialog />}
+    >
+      <div className="rounded-md border bg-card">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-28">Date</TableHead>
+              <TableHead className="w-36">Category</TableHead>
+              <TableHead>Project · Notes</TableHead>
+              <TableHead className="text-right w-32">Amount</TableHead>
+              <TableHead className="w-32">Status</TableHead>
+              <TableHead className="w-40 text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {expenses.isLoading && <TableEmpty colSpan={6}>Loading…</TableEmpty>}
+            {expenses.data?.length === 0 && <TableEmpty colSpan={6}>No expenses yet.</TableEmpty>}
+            {expenses.data?.map((e) => (
+              <TableRow key={e.id}>
+                <TableCell className="font-mono text-xs">{formatDate(e.incurredOn)}</TableCell>
+                <TableCell className="text-xs">{e.category.replace(/_/g, ' ')}</TableCell>
+                <TableCell>
+                  <div className="text-xs text-muted-foreground">{e.project.code}</div>
+                  {e.notes && <div className="text-sm">{e.notes}</div>}
+                  {e.rejectReason && (
+                    <div className="mt-1 text-xs text-destructive">Rejected: {e.rejectReason}</div>
+                  )}
+                </TableCell>
+                <TableCell className="text-right font-mono text-xs">
+                  {formatMoney(e.amount, e.currency)}
+                </TableCell>
+                <TableCell>
+                  <Badge className={`border ${STATUS_COLOR[e.status]}`}>{e.status}</Badge>
+                </TableCell>
+                <TableCell className="text-right">
+                  {(e.status === 'DRAFT' || e.status === 'REJECTED') && (
+                    <Button
+                      size="sm"
+                      onClick={() => submit.mutate(e.id)}
+                      disabled={submit.isPending}
+                    >
+                      <Send className="h-3.5 w-3.5" /> Submit
+                    </Button>
+                  )}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </AdminShell>
+  );
+}
+
+const NewExpenseSchema = z.object({
+  projectId: z.string().uuid('Pick a project'),
+  category: z.enum([
+    'TRAVEL',
+    'LODGING',
+    'MEALS',
+    'LOCAL_CONVEYANCE',
+    'COMMUNICATION',
+    'MATERIALS',
+    'OTHER',
+  ]),
+  amount: z.string().regex(/^\d+(\.\d{1,4})?$/, 'Numeric'),
+  currency: z.string().length(3).default('INR'),
+  incurredOn: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
+  notes: z.string().optional(),
+});
+type NewExpenseInput = z.infer<typeof NewExpenseSchema>;
+
+function NewExpenseDialog() {
+  const [open, setOpen] = React.useState(false);
+  const qc = useQueryClient();
+  const projects = useQuery({
+    queryKey: ['projects'],
+    queryFn: () => api.get<ProjectRow[]>('/projects'),
+    enabled: open,
+  });
+  const form = useForm<NewExpenseInput>({
+    resolver: zodResolver(NewExpenseSchema),
+    defaultValues: {
+      projectId: '',
+      category: 'MEALS',
+      amount: '',
+      currency: 'INR',
+      incurredOn: new Date().toISOString().slice(0, 10),
+      notes: '',
+    },
+  });
+  const create = useMutation({
+    mutationFn: (input: NewExpenseInput) => api.post<Expense>('/expenses', input),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: ['expenses'] });
+      toast.success('Saved as draft. Submit when ready.');
+      setOpen(false);
+      form.reset();
+    },
+    onError: (err: unknown) => toast.error(err instanceof ApiError ? err.message : String(err)),
+  });
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger asChild>
+        <Button>
+          <Plus className="h-4 w-4" /> New expense
+        </Button>
+      </DialogTrigger>
+      <DialogContent>
+        <form onSubmit={form.handleSubmit((v) => create.mutate(v))} className="space-y-4">
+          <DialogHeader>
+            <DialogTitle>New expense</DialogTitle>
+            <DialogDescription>
+              Receipt upload with EXIF + perceptual hash + OCR lands in Slice 1C-γ — for now just
+              enter the line manually.
+            </DialogDescription>
+          </DialogHeader>
+          <Field label="Project" error={form.formState.errors.projectId?.message}>
+            <Select
+              value={form.watch('projectId')}
+              onValueChange={(v) => form.setValue('projectId', v, { shouldDirty: true })}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Pick a project…" />
+              </SelectTrigger>
+              <SelectContent>
+                {projects.data?.map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.code} — {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </Field>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Category">
+              <Select
+                value={form.watch('category')}
+                onValueChange={(v) => form.setValue('category', v as ExpenseCategory)}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CATEGORIES.map((c) => (
+                    <SelectItem key={c} value={c}>
+                      {c.replace(/_/g, ' ')}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+            <Field label="Incurred on">
+              <Input type="date" {...form.register('incurredOn')} />
+            </Field>
+          </div>
+          <div className="grid grid-cols-3 gap-3">
+            <Field label="Amount" error={form.formState.errors.amount?.message}>
+              <Input placeholder="0.00" {...form.register('amount')} />
+            </Field>
+            <Field label="Currency">
+              <Input maxLength={3} {...form.register('currency')} />
+            </Field>
+            <div />
+          </div>
+          <Field label="Notes">
+            <Input placeholder="What was this for?" {...form.register('notes')} />
+          </Field>
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={create.isPending}>
+              {create.isPending ? 'Saving…' : 'Save as draft'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function Field({
+  label,
+  error,
+  children,
+}: {
+  label: string;
+  error?: string | undefined;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <Label>{label}</Label>
+      {children}
+      {error && <p className="text-xs text-destructive">{error}</p>}
+    </div>
   );
 }

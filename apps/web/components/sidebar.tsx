@@ -74,11 +74,16 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
         label: 'Expenses',
         icon: Receipt,
         roles: ['ENGINEER', 'PROJECT_MANAGER', 'ADMIN', 'FINANCE'],
-        stub: true,
+      },
+      {
+        href: '/expenses/inbox',
+        label: 'Expense approvals',
+        icon: ShieldCheck,
+        roles: ['PROJECT_MANAGER', 'FINANCE', 'ADMIN'],
       },
       {
         href: '/approvals',
-        label: 'Approvals',
+        label: 'Approvals (legacy)',
         icon: ShieldCheck,
         roles: ['APPROVER', 'PROJECT_MANAGER', 'FINANCE', 'ADMIN'],
         stub: true,
