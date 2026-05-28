@@ -26,10 +26,12 @@ model User {
   grade         Grade?       @relation(fields: [gradeId], references: [id])
   roles         UserRole[]
   active        Boolean      @default(true)
-  assignedTasks   Task[]       @relation("TaskAssignee")
-  timeLogs        TimeLog[]
-  allocations     Allocation[]
-  managedProjects Project[]    @relation("ProjectPM")
+  assignedTasks    Task[]          @relation("TaskAssignee")
+  timeLogs         TimeLog[]
+  allocations      Allocation[]
+  managedProjects  Project[]       @relation("ProjectPM")
+  travelRequests   TravelRequest[] @relation("TravelRequester")
+  approvedTravels  TravelRequest[] @relation("TravelApprover")
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
   deletedAt     DateTime?
@@ -80,12 +82,15 @@ enum CityTier {
 }
 
 model City {
-  id      String   @id @default(uuid()) @db.Uuid
-  name    String
-  state   String?
-  country String   @default("IN")
-  tier    CityTier
-  active  Boolean  @default(true)
+  id              String          @id @default(uuid()) @db.Uuid
+  name            String
+  state           String?
+  country         String          @default("IN")
+  tier            CityTier
+  active          Boolean         @default(true)
+  projectSites    ProjectSite[]
+  travelFromHere  TravelRequest[] @relation("TravelFromCity")
+  travelToHere    TravelRequest[] @relation("TravelToCity")
 
   @@unique([name, country])
 }
@@ -195,18 +200,32 @@ model Project {
   milestones           Milestone[]
   tasks                Task[]
   allocations          Allocation[]
+  travelRequests       TravelRequest[]
   createdAt            DateTime        @default(now())
   updatedAt            DateTime        @updatedAt
   deletedAt            DateTime?
 }
 
 model ProjectSite {
-  id        String  @id @default(uuid()) @db.Uuid
-  projectId String  @db.Uuid
-  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id        String     @id @default(uuid()) @db.Uuid
+  projectId String     @db.Uuid
+  project   Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
   siteName  String
-  cityId    String  @db.Uuid
+  cityId    String     @db.Uuid
+  city      City       @relation(fields: [cityId], references: [id])
   address   String?
+  geofences Geofence[]
+}
+
+/// Geofence around a project site. Mobile attendance check-in compares
+/// device GPS against these zones — feeds the AttendanceEvent stream.
+model Geofence {
+  id            String      @id @default(uuid()) @db.Uuid
+  projectSiteId String      @db.Uuid
+  projectSite   ProjectSite @relation(fields: [projectSiteId], references: [id], onDelete: Cascade)
+  centerLat     Decimal     @db.Decimal(9, 6)
+  centerLng     Decimal     @db.Decimal(9, 6)
+  radiusMeters  Int
 }
 
 model Milestone {
@@ -287,6 +306,73 @@ model Allocation {
 
   @@index([userId, periodStart, periodEnd])
   @@index([projectId])
+}
+
+// ---------- Travel & trips ----------
+
+enum TripType {
+  INTER_CITY
+  INTRA_CITY
+}
+
+enum TravelStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  IN_PROGRESS
+  COMPLETED
+  CLOSED
+}
+
+model TravelRequest {
+  id              String       @id @default(uuid()) @db.Uuid
+  userId          String       @db.Uuid
+  user            User         @relation("TravelRequester", fields: [userId], references: [id])
+  projectId       String       @db.Uuid
+  project         Project      @relation(fields: [projectId], references: [id])
+  fromCityId      String       @db.Uuid
+  fromCity        City         @relation("TravelFromCity", fields: [fromCityId], references: [id])
+  toCityId        String       @db.Uuid
+  toCity          City         @relation("TravelToCity", fields: [toCityId], references: [id])
+  startDate       DateTime     @db.Date
+  endDate         DateTime     @db.Date
+  travelClass     TravelClass
+  tripType        TripType
+  purpose         String
+  status          TravelStatus @default(DRAFT)
+  approverId      String?      @db.Uuid
+  approver        User?        @relation("TravelApprover", fields: [approverId], references: [id])
+  approvedAt      DateTime?
+  rejectReason    String?
+  trip            Trip?
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+  deletedAt       DateTime?
+
+  @@index([userId, status])
+  @@index([projectId, status])
+}
+
+model Trip {
+  id                       String         @id @default(uuid()) @db.Uuid
+  travelRequestId          String         @unique @db.Uuid
+  travelRequest            TravelRequest  @relation(fields: [travelRequestId], references: [id])
+  actualStart              DateTime
+  actualEnd                DateTime?
+  /// Stringified JSON: a list of [lat,lng,ts] samples; cheap for v1.
+  gpsTrail                 Json?
+  /// Frozen on trip close from @ces/da-engine
+  daEligibleDays           Decimal?       @db.Decimal(6, 2)
+  daAmount                 Decimal?       @db.Decimal(14, 4)
+  daCurrency               String?        @db.Char(3)
+  /// Frozen breakdown for "tap to see derivation" per Principle #3
+  daBreakdown              Json?
+  travelActualCost         Decimal        @default(0) @db.Decimal(14, 4)
+  lodgingActualCost        Decimal        @default(0) @db.Decimal(14, 4)
+  localConveyanceActualCost Decimal       @default(0) @db.Decimal(14, 4)
+  createdAt                DateTime       @default(now())
+  updatedAt                DateTime       @updatedAt
 }
 
 // ---------- Audit log (soft-delete + history) ----------

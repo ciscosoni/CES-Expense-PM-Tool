@@ -208,3 +208,80 @@ export interface PnlResult {
   grossProfit: { amount: string; currency: string };
   marginPercent: number | null;
 }
+
+// ---- Travel + Trips ----
+
+export type TripType = 'INTER_CITY' | 'INTRA_CITY';
+export type TravelStatus =
+  | 'DRAFT'
+  | 'SUBMITTED'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'IN_PROGRESS'
+  | 'COMPLETED'
+  | 'CLOSED';
+
+export interface TravelRequest {
+  id: string;
+  userId: string;
+  projectId: string;
+  fromCityId: string;
+  toCityId: string;
+  startDate: string;
+  endDate: string;
+  travelClass: TravelClass;
+  tripType: TripType;
+  purpose: string;
+  status: TravelStatus;
+  approverId: string | null;
+  approvedAt: string | null;
+  rejectReason: string | null;
+  createdAt: string;
+  user: UserBrief & { gradeId?: string | null };
+  project: { id: string; code: string; name: string; pmId: string };
+  fromCity: { id: string; name: string; tier: CityTier };
+  toCity: { id: string; name: string; tier: CityTier };
+  approver: UserBrief | null;
+  trip: Trip | null;
+}
+
+export interface Trip {
+  id: string;
+  travelRequestId: string;
+  actualStart: string;
+  actualEnd: string | null;
+  daEligibleDays: string | null;
+  daAmount: string | null;
+  daCurrency: string | null;
+  daBreakdown: DaDayBreakdown[] | null;
+  travelActualCost: string;
+  lodgingActualCost: string;
+  localConveyanceActualCost: string;
+}
+
+export interface TripWithRequest extends Trip {
+  travelRequest: {
+    id: string;
+    startDate: string;
+    endDate: string;
+    purpose: string;
+    fromCity: { id: string; name: string; tier: CityTier };
+    toCity: { id: string; name: string; tier: CityTier };
+    project: { id: string; code: string; name: string };
+  };
+}
+
+export interface DaDayBreakdown {
+  date: string;
+  factor: number;
+  perDiem: string;
+  amount: string;
+  currency: string;
+  reason: 'FULL_DAY' | 'DEPARTURE_DAY' | 'RETURN_DAY' | 'INTRA_CITY_NO_OVERNIGHT';
+}
+
+export interface DaResult {
+  eligibleDays: number;
+  total: { amount: string; currency: string };
+  breakdown: DaDayBreakdown[];
+}

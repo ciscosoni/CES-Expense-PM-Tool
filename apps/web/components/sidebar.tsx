@@ -62,7 +62,12 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
         label: 'Travel',
         icon: Plane,
         roles: ['ENGINEER', 'PROJECT_MANAGER', 'ADMIN', 'FINANCE'],
-        stub: true,
+      },
+      {
+        href: '/travel/inbox',
+        label: 'Travel approvals',
+        icon: ShieldCheck,
+        roles: ['PROJECT_MANAGER', 'ADMIN'],
       },
       {
         href: '/expenses',
