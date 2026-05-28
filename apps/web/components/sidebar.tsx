@@ -43,7 +43,6 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
         label: 'Live Ops',
         icon: LayoutDashboard,
         roles: ['ADMIN', 'PROJECT_MANAGER', 'FINANCE'],
-        stub: true,
       },
       {
         href: '/projects',
