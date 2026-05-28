@@ -1,0 +1,13 @@
+node_modules
+dist
+build
+.next
+.expo
+.turbo
+coverage
+pnpm-lock.yaml
+
+# vendored skills (managed by the skills tool — do not reformat)
+.agents/
+.claude/skills/
+skills-lock.json

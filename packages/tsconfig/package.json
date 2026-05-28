@@ -1,0 +1,19 @@
+{
+  "name": "@ces/tsconfig",
+  "version": "0.0.0",
+  "private": true,
+  "files": [
+    "base.json",
+    "node.json",
+    "nextjs.json",
+    "react-native.json",
+    "library.json"
+  ],
+  "exports": {
+    "./base.json": "./base.json",
+    "./node.json": "./node.json",
+    "./nextjs.json": "./nextjs.json",
+    "./react-native.json": "./react-native.json",
+    "./library.json": "./library.json"
+  }
+}

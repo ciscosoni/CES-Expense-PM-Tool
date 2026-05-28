@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "CES Internal",
+    "slug": "ces-internal",
+    "scheme": "ces",
+    "version": "0.0.1",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "in.cestech.internal"
+    },
+    "android": {
+      "package": "in.cestech.internal",
+      "adaptiveIcon": {
+        "backgroundColor": "#0F172A"
+      }
+    },
+    "plugins": ["expo-router"],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}

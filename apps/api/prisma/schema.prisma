@@ -1,0 +1,229 @@
+// CES Tech internal tool — Prisma schema
+// The schema follows the Zod source-of-truth in `packages/domain`. Keep them in sync.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------- Identity & RBAC ----------
+
+model User {
+  id            String     @id @default(uuid()) @db.Uuid
+  azureOid      String     @unique
+  email         String     @unique
+  displayName   String
+  jobTitle      String?
+  department    String?
+  managerId     String?    @db.Uuid
+  manager       User?      @relation("Manager", fields: [managerId], references: [id])
+  reports       User[]     @relation("Manager")
+  gradeId       String?    @db.Uuid
+  grade         Grade?     @relation(fields: [gradeId], references: [id])
+  roles         UserRole[]
+  active        Boolean    @default(true)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  deletedAt     DateTime?
+}
+
+enum UserRole {
+  ADMIN
+  FINANCE
+  PROJECT_MANAGER
+  APPROVER
+  ENGINEER
+}
+
+// ---------- Grades & cost rates (time-versioned) ----------
+
+model Grade {
+  id              String     @id @default(uuid()) @db.Uuid
+  code            String     @unique
+  name            String
+  seniorityOrder  Int
+  active          Boolean    @default(true)
+  users           User[]
+  costRates       CostRate[]
+  entitlementRows EntitlementMatrixRow[]
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  deletedAt       DateTime?
+}
+
+model CostRate {
+  id            String   @id @default(uuid()) @db.Uuid
+  gradeId       String   @db.Uuid
+  grade         Grade    @relation(fields: [gradeId], references: [id])
+  ratePerDay    Decimal  @db.Decimal(14, 4)
+  currency      String   @db.Char(3)
+  effectiveFrom DateTime @db.Date
+
+  @@index([gradeId, effectiveFrom])
+}
+
+// ---------- Cities & entitlement matrix ----------
+
+enum CityTier {
+  METRO
+  TIER_2
+  TIER_3
+  INTERNATIONAL
+}
+
+model City {
+  id      String   @id @default(uuid()) @db.Uuid
+  name    String
+  state   String?
+  country String   @default("IN")
+  tier    CityTier
+  active  Boolean  @default(true)
+
+  @@unique([name, country])
+}
+
+enum TravelClass {
+  FLIGHT_ECONOMY
+  FLIGHT_BUSINESS
+  TRAIN_3AC
+  TRAIN_2AC
+  TRAIN_1AC
+  BUS_AC
+  TAXI
+}
+
+model EntitlementMatrixRow {
+  id                          String      @id @default(uuid()) @db.Uuid
+  gradeId                     String      @db.Uuid
+  grade                       Grade       @relation(fields: [gradeId], references: [id])
+  cityTier                    CityTier
+  perDiemAmount               Decimal     @db.Decimal(14, 4)
+  perDiemCurrency             String      @db.Char(3)
+  lodgingCapPerNight          Decimal     @db.Decimal(14, 4)
+  lodgingCurrency             String      @db.Char(3)
+  travelClass                 TravelClass
+  localConveyanceCapPerDay    Decimal     @db.Decimal(14, 4)
+  localConveyanceCurrency     String      @db.Char(3)
+  effectiveFrom               DateTime    @db.Date
+
+  @@index([gradeId, cityTier, effectiveFrom])
+}
+
+model DaPolicy {
+  id                    String   @id @default(uuid()) @db.Uuid
+  name                  String
+  partialDayPercent     Decimal  @db.Decimal(5, 4)
+  intraCitySameDayPaysDa Boolean
+  effectiveFrom         DateTime @db.Date
+}
+
+// ---------- Clients & projects ----------
+
+enum ClientKind {
+  SI
+  OEM
+}
+
+model Client {
+  id        String     @id @default(uuid()) @db.Uuid
+  name      String     @unique
+  kind      ClientKind
+  active    Boolean    @default(true)
+  projects  Project[]
+}
+
+model EndCustomer {
+  id       String    @id @default(uuid()) @db.Uuid
+  name     String    @unique
+  industry String?
+  active   Boolean   @default(true)
+  projects Project[]
+}
+
+enum ProjectCategory {
+  ACI
+  NON_ACI
+  SD_WAN
+  SECURITY
+  AUDIT
+  MANAGED_SERVICES
+}
+
+enum BillingModel {
+  FIXED_PRICE
+  T_AND_M
+  MILESTONE
+}
+
+enum ProjectStatus {
+  DRAFT
+  ACTIVE
+  ON_HOLD
+  CLOSED
+  CANCELLED
+}
+
+model Project {
+  id                   String          @id @default(uuid()) @db.Uuid
+  code                 String          @unique
+  name                 String
+  clientId             String          @db.Uuid
+  client               Client          @relation(fields: [clientId], references: [id])
+  endCustomerId        String?         @db.Uuid
+  endCustomer          EndCustomer?    @relation(fields: [endCustomerId], references: [id])
+  whiteLabel           Boolean         @default(false)
+  category             ProjectCategory
+  billingModel         BillingModel
+  contractValue        Decimal         @db.Decimal(18, 4)
+  contractCurrency     String          @db.Char(3)
+  // Reserved for v2 hardware/OEM pass-through; v1 is services-only.
+  includesPassthrough  Boolean         @default(false)
+  pmId                 String          @db.Uuid
+  plannedStart         DateTime        @db.Date
+  plannedEnd           DateTime        @db.Date
+  status               ProjectStatus
+  sites                ProjectSite[]
+  milestones           Milestone[]
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
+  deletedAt            DateTime?
+}
+
+model ProjectSite {
+  id        String  @id @default(uuid()) @db.Uuid
+  projectId String  @db.Uuid
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  siteName  String
+  cityId    String  @db.Uuid
+  address   String?
+}
+
+model Milestone {
+  id            String    @id @default(uuid()) @db.Uuid
+  projectId     String    @db.Uuid
+  project       Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  name          String
+  value         Decimal   @db.Decimal(18, 4)
+  currency      String    @db.Char(3)
+  plannedDate   DateTime  @db.Date
+  signedOffDate DateTime? @db.Date
+}
+
+// ---------- Audit log (soft-delete + history) ----------
+
+model AuditLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  entity    String
+  entityId  String   @db.Uuid
+  action    String
+  actorId   String?  @db.Uuid
+  before    Json?
+  after     Json?
+  createdAt DateTime @default(now())
+
+  @@index([entity, entityId, createdAt])
+}

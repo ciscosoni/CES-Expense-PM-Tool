@@ -1,0 +1,11 @@
+{
+  "extends": "@ces/tsconfig/react-native.json",
+  "compilerOptions": {
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./*"]
+    }
+  },
+  "include": ["app/**/*", "components/**/*", "lib/**/*", "*.ts", "*.tsx", ".expo/types/**/*.ts"],
+  "exclude": ["node_modules", ".expo", "dist"]
+}
