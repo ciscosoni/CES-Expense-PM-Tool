@@ -9,7 +9,12 @@ async function bootstrap() {
   const env = loadApiEnv();
   const app = await NestFactory.create(AppModule);
 
-  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+  // Body validation goes through ZodValidationPipe (registered per-controller).
+  // The global Nest ValidationPipe stays only for Query/Param coercion (no whitelist —
+  // whitelist would strip Zod DTOs since they carry no class-validator decorators).
+  app.useGlobalPipes(
+    new ValidationPipe({ transform: true, transformOptions: { enableImplicitConversion: true } }),
+  );
   app.setGlobalPrefix('api');
 
   const swagger = new DocumentBuilder()

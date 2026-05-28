@@ -10,7 +10,21 @@ The authoritative product brief lives at `CES_Tech_Internal_Tool_ClaudeCode_Prom
 
 Internal operations platform for **CES Tech (N-Expert Solutions Pvt. Ltd.)**, an IT infrastructure services company in Noida. Covers Project & Task Management, Attendance, Travel, Expense, Reimbursement, Daily Allowance, Approvals/Change Management, and Project P&L. Web + mobile. Single sign-on with Microsoft Entra ID.
 
-## 2. Stack (confirmed)
+## 2. Design constitution — why this tool exists
+
+The founder named the pain points this tool must kill (full list in `project memory: pain_points`). They reduce to one root cause: **the company has no objective source of truth, so everything becomes a dispute** — receipts vs. memory, manager vs. engineer, finance vs. PM, leadership vs. leadership.
+
+Three principles fall out and govern every design decision:
+
+| Principle                         | What it means                                                                                                                         |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| **Evidence-by-default**           | Every action leaves an objective trace (GPS, geofence, photo EXIF, perceptual hash, calc audit). Nothing rests on "his word vs hers." |
+| **Visibility-first**              | Live dashboards before forms. Anyone who matters sees the same data at the same moment.                                               |
+| **Computed, never entered twice** | Payslip / DA / reimbursement / P&L are _derived_ from the evidence layer. Every number shows its derivation on tap.                   |
+
+**Check every new feature against these three.** If it serves none, push back on scope. When making UX tradeoffs, visibility outranks minimalism — better to show 4 numbers with derivations than 1 number with mystery.
+
+## 3. Stack (confirmed)
 
 | Layer         | Tech                                                                      |
 | ------------- | ------------------------------------------------------------------------- |
@@ -26,7 +40,7 @@ Internal operations platform for **CES Tech (N-Expert Solutions Pvt. Ltd.)**, an
 | Secrets       | Azure Key Vault + App Configuration                                       |
 | Observability | Application Insights + structured logs                                    |
 
-## 3. Repo layout
+## 4. Repo layout
 
 ```
 apps/
@@ -44,17 +58,22 @@ packages/
   eslint-config/ shared ESLint configs
 ```
 
-## 4. Common commands
+## 5. Common commands
 
 All commands run from the repo root.
 
 ```bash
-pnpm install            # install all workspace deps
-pnpm dev                # turbo run dev (all apps in parallel)
-pnpm build              # turbo run build
-pnpm test               # turbo run test (Vitest in packages)
-pnpm lint               # turbo run lint
-pnpm typecheck          # turbo run typecheck
+pnpm install                          # install all workspace deps
+pnpm dev                              # turbo run dev (all apps in parallel)
+pnpm build                            # turbo run build
+pnpm test                             # turbo run test (Vitest)
+pnpm lint                             # turbo run lint
+pnpm typecheck                        # turbo run typecheck
+pnpm format / pnpm format:check       # Prettier
+
+# Local Postgres
+docker compose up -d                  # start ces-postgres on :5432
+docker compose down                   # stop
 
 # Scoped to one workspace:
 pnpm --filter @ces/api dev
@@ -69,52 +88,122 @@ pnpm --filter @ces/api prisma:migrate
 pnpm --filter @ces/api prisma:studio
 ```
 
-If `pnpm` isn't on PATH, enable it once: `corepack enable && corepack prepare pnpm@latest --activate`.
+If `pnpm` isn't on PATH: `corepack enable && corepack prepare pnpm@latest --activate`.
 
-## 5. Domain glossary (interpret requirements through this)
+## 6. Domain glossary
 
 - **SI** — System Integrator (our direct client, e.g. NTT, Airtel Business, LTIMindtree)
 - **OEM** — hardware/software vendor (Cisco, Arista, Palo Alto, Fortinet, Juniper, HPE Aruba)
 - **End customer** — bank/airport/government/energy customer the SI/OEM sells to
-- **White-label** — CES delivers under the SI's branding; CES identity hidden. A project carries this flag.
+- **White-label** — CES delivers under the SI's branding; CES identity hidden. Project flag.
 - **TA** — Travel Allowance (mode/class entitlement + local conveyance cap)
 - **DA / Per Diem** — Daily Allowance for being away on-site (food/incidentals)
-- **Grade** — employee seniority band (e.g. L1 Junior Engineer … L5 Manager). Drives TA/DA limits, travel class, lodging caps.
+- **Grade** — employee seniority band (L1 Junior Engineer … L5 Manager). Drives TA/DA, travel class, lodging caps.
 - **City tier** — Metro/Tier-1, Tier-2, Tier-3, International. Combined with Grade to resolve DA + lodging caps.
 - **Cost rate vs Bill rate** — internal day cost (P&L) vs client billing rate (revenue). P&L always uses **cost rate**.
 - **T&M / Fixed Price / Milestone** — billing models on a Project.
 - **CR** — Project Change Request that mutates scope/timeline/cost and feeds back into P&L (baseline vs current).
-- **Project categories** — ACI, Non-ACI, SD-WAN, Security, Audit, Managed Services (NOC/SOC). Selectable metadata.
+- **Project categories** — ACI, Non-ACI, SD-WAN, Security, Audit, Managed Services (NOC/SOC).
 
-## 6. Core data model (load-bearing entities)
+## 7. Module structure (mobile + web)
 
-See `packages/domain` for the source-of-truth Zod schemas. High-level shape:
+### Mobile (engineer-first, manager + leadership also supported)
 
-- **User** — `azure_oid, email, name, job_title, department, manager_id, grade_id, roles[], cost_rate, active`
-- **Grade** + **CostRate(grade_id, rate, effective_from)** — cost rates are time-versioned
-- **City(name, tier)** + **EntitlementMatrix(grade_id, city_tier, per_diem, lodging_cap, travel_class, local_conveyance_cap, effective_from)** — matrix is time-versioned
-- **Client (SI/OEM)** and **EndCustomer** — two distinct parties on a project
-- **Project** — `client_id, end_customer_id, white_label, category, billing_model, contract_value, pm_id, planned_start, planned_end, status` + **ProjectSite[]**
-- **Milestone(project_id, name, value, planned_date, signed_off_date)**
-- **Phase / Task** — tree with `parent_id`, `assignee_id`, planned/actual dates, dependencies, %complete + **TimeLog(task_id, user_id, date, hours)**
-- **Attendance(user_id, date, type, check_in, check_out, geo_lat/lng)**
-- **TravelRequest** + **Trip(travel_request_id, actuals, gps_trail?, da_days, da_amount)**
-- **Expense(user_id, project_id, trip_id?, category, amount, currency, date, receipt_url, status)** + **Reimbursement(expense_ids[], payout_status, paid_on, reference)**
-- **ChangeRequest(project_id, type, scope/time/cost deltas, status)**
-- **ApprovalWorkflow / ApprovalStep / ApprovalInstance** — generic engine, used by all approvable items
-- **ProjectFinancials** — computed/rolled-up view (revenue, planned/actual cost by category, gross_profit, margin)
-- **AuditLog(entity, action, actor, before/after, timestamp)** — soft-delete + full history everywhere
+```
+Today    Default tab. Attendance status, today's tasks, DA running total,
+         pending expenses, pending approvals (if manager).
+Tasks    All my assigned tasks across projects. Tap to update % + blockers.
+Travel   Active trip with live GPS distance + DA estimate. New trip request
+         shows entitlements upfront. Past trips.
+Expenses Snap receipt (camera → EXIF + OCR + perceptual hash). Pending /
+         submitted / reimbursed. DA owed (computed, with derivation on tap).
+Approvals (managers) Inbox with SLA timers; reject requires reason.
+Profile  Payslip with line-by-line derivation. My entitlements. Compliance score.
+```
 
-## 7. Calculation rules (must be correct — these decide real money)
+### Web (by role)
+
+```
+LEADERSHIP    Live Ops map (who's where now), portfolio P&L (RAG + margin
+              trend + burn), today's reimbursement outflow, anomalies feed.
+PROJECT MGR   My projects (Gantt + Kanban toggle). Daily standup digest (auto).
+              Resource allocation with conflict highlights. Live P&L. CRs.
+FINANCE       Reimbursement queue (batch → bank file / Tally). Payslip
+              generation (preview derivation before lock). DA payout summary.
+ADMIN         Grades, cost rates, cities, entitlement matrix, DA policies.
+              Approval workflows (visual builder). Clients, end customers.
+              Users + role assignments.
+```
+
+## 8. Core data model
+
+See `packages/domain` for source-of-truth Zod schemas; `apps/api/prisma/schema.prisma` for the persisted shape. The schema is bigger than a typical brief because pain points #1 and #3 (fraud + opacity) drive several extra entities the brief didn't list.
+
+**Identity & access**
+
+- `User(azureOid, email, displayName, jobTitle, department, managerId, gradeId, roles[], active)`
+
+**Master data (admin-editable, time-versioned)**
+
+- `Grade(code, name, seniorityOrder)`
+- `CostRate(gradeId, ratePerDay, currency, effectiveFrom)` — time-versioned
+- `City(name, country, tier)`
+- `EntitlementMatrix(gradeId, cityTier, perDiem, lodgingCap, travelClass, localConveyanceCap, effectiveFrom)` — time-versioned
+- `DaPolicy(partialDayPercent, intraCitySameDayPaysDa, effectiveFrom)` — time-versioned
+- `Client(name, kind: SI|OEM)`, `EndCustomer(name)`
+
+**Projects**
+
+- `Project(code, name, clientId, endCustomerId, whiteLabel, category, billingModel, contractValue, pmId, plannedStart, plannedEnd, includesPassthrough, status)`
+- `ProjectSite(projectId, name, cityId, address)`
+- `Geofence(projectSiteId, lat, lng, radiusMeters)` — defines "on-site" zones for attendance
+- `Milestone(projectId, name, value, plannedDate, signedOffDate)`
+- `Phase` / `Task` (tree: `parentId`, `assigneeId`, planned/actual, dependencies, %complete)
+- `Allocation(userId, projectId, percentAllocation, periodStart, periodEnd)` — for capacity planning + overlap detection
+- `TaskUpdate(taskId, userId, date, percentComplete, hoursLogged, blockers, body)` — daily standup post; rolls into TimeLog
+- `TimeLog(taskId, userId, date, hours)` — feeds effort cost
+
+**Attendance**
+
+- `AttendanceEvent(userId, type, lat, lng, accuracy, timestamp, source)` — raw events: CHECK_IN, CHECK_OUT, GEOFENCE_ENTER, GEOFENCE_EXIT. Daily summary is derived.
+
+**Travel & expense**
+
+- `TravelRequest(userId, projectId, fromCityId, toCityId, dates, travelClass, tripType, status)`
+- `Trip(travelRequestId, actuals, gpsTrail?, daEligibleDays, daAmount, costs by category)`
+- `Expense(userId, projectId, tripId?, category, amount, currency, incurredOn, status)`
+- `Receipt(expenseId, fileUrl, exifTimestamp, exifLat, exifLng, perceptualHash, ocrJson)` — separate from Expense so splits work
+- `ReceiptFlag(receiptId, kind, severity)` — DUPLICATE_HASH, AMOUNT_OCR_MISMATCH, DATE_OUT_OF_TRIP, GPS_FAR_FROM_TRIP, SUSPICIOUS_VENDOR
+- `Reimbursement(expenseIds[], userId, totalAmount, status, paidOn, reference)`
+
+**Approvals & change**
+
+- `ApprovalWorkflow / ApprovalStepDefinition` — admin-editable definitions
+- `ApprovalInstance / ApprovalStepInstance` — runtime per item; with SLA timestamps
+- `ChangeRequest(projectId, type, scope/time/cost deltas, status)`
+
+**Payroll**
+
+- `PayslipLine(userId, period, kind, amount, sourceKind, sourceId)` — every line traceable to its source record
+
+**Collaboration & system**
+
+- `Comment(entityKind, entityId, authorId, body, parentId)` — polymorphic; threaded
+- `Notification(userId, kind, subjectKind, subjectId, channel, sentAt, readAt)` + `NotificationRule(trigger, channel, recipients)`
+- `Anomaly(kind, severity, entityKind, entityId, detectedAt, resolvedAt)` — surfaces to leadership dashboard
+- `AuditLog(entity, entityId, action, actorId, before, after, createdAt)` — every state change; soft-deletes everywhere
+
+## 9. Calculation rules (must be correct — these decide real money)
 
 ### DA (Daily Allowance)
 
 `DA = perDiem(grade, cityTier) × eligibleDays`
 
 - Lookup uses the **EntitlementMatrix row effective on the trip date** (never hardcode amounts)
-- First-day and last-day proration is **policy-driven** (e.g. 50% × per diem) — editable in admin, not in code
-- Intra-city same-day work → no overnight DA; only local conveyance allowance applies
+- First-day and last-day proration is **policy-driven** (e.g. 50% × per diem) — editable in admin
+- Intra-city same-day work → no overnight DA; only local conveyance allowance applies (configurable)
 - International cities are their own tier (allow foreign currency)
+- DA result returned to UI **always includes per-day breakdown with reason codes** (FULL_DAY / DEPARTURE_DAY / RETURN_DAY / INTRA_CITY_NO_OVERNIGHT) so the engineer can see the math (principle #3)
 
 ### P&L (Project)
 
@@ -128,40 +217,63 @@ GrossProfit    = Revenue − Cost
 Margin %       = GrossProfit / Revenue × 100
 ```
 
-- v1 is **services-only**. A `Project.includes_passthrough` boolean reserves the hook for v2 hardware/OEM pass-through.
+- v1 is **services-only**. `Project.includes_passthrough` reserves the v2 hardware/OEM pass-through hook.
 - All inputs are time-versioned: use the rate/matrix entry **effective on the relevant date**, not the current row.
+- P&L `costBreakdown` returned to UI is the basis for the "tap to see derivation" leadership view (principle #3).
 
 ### Approvals
 
-Generic state machine: `Draft → Submitted → PendingApproval(step n) → Approved | Rejected → Settled/Closed`.
-Routing rules read from admin-editable workflow definitions (manager from Azure AD, amount thresholds, project role, grade). Every transition writes an `AuditLog` row.
+State machine: `Draft → Submitted → PendingApproval(step n) → Approved | Rejected → Settled/Closed`.
 
-## 8. Non-negotiables (these have caused real bugs in similar systems — don't shortcut them)
+- Routing rules read from admin-editable workflow definitions (reporting manager from Azure AD, amount thresholds, project role, grade).
+- Rejects **require a reason** (UX-enforced; engine accepts a `comment` field).
+- Every step transition writes an `AuditLog` row.
+- UI exposes SLA timers (how long pending) so silently-stuck items become visible.
 
-1. **No hardcoded amounts.** Grades, per-diems, caps, cost rates, approval thresholds are all admin-editable master data.
-2. **Time-versioning is mandatory** on CostRate and EntitlementMatrix. A trip in March must use March's rate, even if changed in April.
-3. **DA + P&L engines stay pure and unit-tested.** No DB calls, no I/O. Inputs in, number out. Tests cover proration, half-day rules, currency, mid-trip rate changes.
-4. **No local username/password.** Sign-in is Microsoft only (MSAL/OIDC). Manager chain is sourced from Microsoft Graph, not entered manually.
+### Receipt fraud detection (Phase 1)
+
+For every uploaded receipt, derive at upload time:
+
+- **Perceptual hash** (e.g. pHash of the image) → flag DUPLICATE_HASH if matches another receipt by same or different user
+- **OCR** → extract amount + date + vendor → flag AMOUNT_OCR_MISMATCH if entered amount > OCR-detected amount by configurable threshold
+- **EXIF timestamp** → flag DATE_OUT_OF_TRIP if outside the linked trip's date window
+- **EXIF GPS** → flag GPS_FAR_FROM_TRIP if more than configurable km from any project site on the trip
+- Flags surface in the approver inbox **with explanation** — never silently rejected, never silently accepted.
+
+## 10. Non-negotiables (don't shortcut these)
+
+1. **No hardcoded amounts.** Grades, per-diems, caps, cost rates, approval thresholds are admin-editable master data.
+2. **Time-versioning is mandatory** on CostRate, EntitlementMatrix, DaPolicy. A trip in March must use March's rate, even if changed in April.
+3. **DA + P&L + approval engines stay pure and unit-tested.** No DB calls, no I/O. Inputs in, result out.
+4. **No local username/password.** Sign-in is Microsoft only (MSAL/OIDC). Manager chain is sourced from Microsoft Graph.
 5. **Soft-delete + audit log everywhere.** Financial records never hard-delete.
-6. **All exports in `.xlsx`.** No CSV-only paths. Use the shared `@ces/excel` package.
+6. **All exports in `.xlsx`.** No CSV-only paths. Use `@ces/excel`.
 7. **Multi-currency-ready** even though INR is default — never assume INR in code; always carry a currency code.
 8. **Mobile must be offline-tolerant** — queue receipts/expenses when offline, sync on reconnect. Field sites have poor connectivity.
-9. **Data residency: India.** All Azure resources in Central India / South India.
+9. **Data residency: India.** Central India / South India Azure regions only.
+10. **Every derived number ships with its derivation** — DA breakdown, P&L cost breakdown, PayslipLine.sourceKind/sourceId. Surfaces in UI on tap (principle #3).
+11. **Rejects require a reason.** Both UX-enforced and recorded in `ApprovalStepInstance.comment` + `AuditLog`.
 
-## 9. Phased delivery
+## 11. Phased delivery (revised after pain-point session)
 
-- **Phase 0 — Foundations:** monorepo + Entra SSO + Graph sync + RBAC + Master data + DA/P&L/Approval engines + audit/soft-delete + CI
-- **Phase 1 — MVP:** Projects & Tasks, Travel + DA, Expense + Reimbursement (all wired through Approval engine)
-- **Phase 2:** Attendance (geofenced), Project CRs, Leadership P&L dashboard, full reporting
-- **Phase 3 — Integrations:** Teams notifications, Outlook mail, Tally, SAP, payroll system
+- **Phase 0 — Foundations:** monorepo ✓, Entra SSO + Graph sync, RBAC, master data, DA/P&L/Approval engines ✓, audit/soft-delete plumbing, local Postgres + first master-data module (Grades) end-to-end, CI
+- **Phase 1 — MVP:**
+  - Mobile: Today, Tasks, Trip-with-GPS, Receipts-with-EXIF+OCR+hash, Approval Inbox
+  - Web: Leadership Live Ops, Project P&L, Resource Utilization, Reimbursement Queue
+  - Daily Standup auto-publish flow (engineer → PM digest → leadership digest)
+  - Approval engine with SLA timers + required reject reasons
+  - Payslip derivation (transparent line-by-line)
+- **Phase 2:** Geofenced Attendance regularization, Project CRs (baseline vs current), Anomaly detection rules, Allocation conflict detector, Polymorphic Comments
+- **Phase 3:** Tally / SAP / payroll integrations, Teams / Outlook notifications via Graph, Reporting/BI exports
 
-When picking up work mid-build, check `git log` and the open tasks to see where Phase X stands.
+When picking up work mid-build, check `git log` + open tasks to see where Phase X stands.
 
-## 10. Working method (from §10 of the brief)
+## 12. Working method
 
 - This is a multi-session build. Do not try to one-shot anything.
-- For new modules: confirm scope against the brief and CLAUDE.md, propose the slice, get sign-off, then build.
+- For new modules: confirm scope against this doc + the brief, propose the slice, get sign-off, then build.
 - Keep commits small and logical. Each module/PR should be independently runnable and testable.
 - When something is ambiguous mid-build, **ask rather than guess** — especially anything that touches DA, P&L, approvals, or money flows.
 - Seed sample data for every new entity so the UI is clickable immediately.
 - The financially-sensitive packages (`da-engine`, `pnl-engine`, `approval-engine`) get unit tests **before** the API/UI that uses them.
+- Every new module gets a sentence in this CLAUDE.md and a memory entry if it introduces non-obvious design context.

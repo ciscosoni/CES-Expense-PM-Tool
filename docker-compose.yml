@@ -1,0 +1,24 @@
+# Local development services for CES Tech internal tool.
+# Production runs on Azure Database for PostgreSQL Flexible Server (Central India).
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ces-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ces
+      POSTGRES_PASSWORD: ces
+      POSTGRES_DB: ces_dev
+    ports:
+      - '5432:5432'
+    volumes:
+      - ces-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ces -d ces_dev']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  ces-postgres-data:
