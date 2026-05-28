@@ -13,21 +13,25 @@ datasource db {
 // ---------- Identity & RBAC ----------
 
 model User {
-  id            String     @id @default(uuid()) @db.Uuid
-  azureOid      String     @unique
-  email         String     @unique
+  id            String       @id @default(uuid()) @db.Uuid
+  azureOid      String       @unique
+  email         String       @unique
   displayName   String
   jobTitle      String?
   department    String?
-  managerId     String?    @db.Uuid
-  manager       User?      @relation("Manager", fields: [managerId], references: [id])
-  reports       User[]     @relation("Manager")
-  gradeId       String?    @db.Uuid
-  grade         Grade?     @relation(fields: [gradeId], references: [id])
+  managerId     String?      @db.Uuid
+  manager       User?        @relation("Manager", fields: [managerId], references: [id])
+  reports       User[]       @relation("Manager")
+  gradeId       String?      @db.Uuid
+  grade         Grade?       @relation(fields: [gradeId], references: [id])
   roles         UserRole[]
-  active        Boolean    @default(true)
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+  active        Boolean      @default(true)
+  assignedTasks   Task[]       @relation("TaskAssignee")
+  timeLogs        TimeLog[]
+  allocations     Allocation[]
+  managedProjects Project[]    @relation("ProjectPM")
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
   deletedAt     DateTime?
 }
 
@@ -183,11 +187,14 @@ model Project {
   // Reserved for v2 hardware/OEM pass-through; v1 is services-only.
   includesPassthrough  Boolean         @default(false)
   pmId                 String          @db.Uuid
+  pm                   User            @relation("ProjectPM", fields: [pmId], references: [id])
   plannedStart         DateTime        @db.Date
   plannedEnd           DateTime        @db.Date
   status               ProjectStatus
   sites                ProjectSite[]
   milestones           Milestone[]
+  tasks                Task[]
+  allocations          Allocation[]
   createdAt            DateTime        @default(now())
   updatedAt            DateTime        @updatedAt
   deletedAt            DateTime?
@@ -211,6 +218,75 @@ model Milestone {
   currency      String    @db.Char(3)
   plannedDate   DateTime  @db.Date
   signedOffDate DateTime? @db.Date
+}
+
+// ---------- Tasks & time tracking ----------
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  BLOCKED
+  DONE
+  CANCELLED
+}
+
+model Task {
+  id              String     @id @default(uuid()) @db.Uuid
+  projectId       String     @db.Uuid
+  project         Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  parentId        String?    @db.Uuid
+  parent          Task?      @relation("TaskTree", fields: [parentId], references: [id])
+  children        Task[]     @relation("TaskTree")
+  name            String
+  description     String?
+  assigneeId      String?    @db.Uuid
+  assignee        User?      @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  status          TaskStatus @default(TODO)
+  percentComplete Int        @default(0)
+  plannedStart    DateTime?  @db.Date
+  plannedEnd      DateTime?  @db.Date
+  actualStart     DateTime?  @db.Date
+  actualEnd       DateTime?  @db.Date
+  timeLogs        TimeLog[]
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  deletedAt       DateTime?
+
+  @@index([projectId])
+  @@index([assigneeId])
+}
+
+model TimeLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  taskId    String   @db.Uuid
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  userId    String   @db.Uuid
+  user      User     @relation(fields: [userId], references: [id])
+  date      DateTime @db.Date
+  hours     Decimal  @db.Decimal(5, 2)
+  notes     String?
+  createdAt DateTime @default(now())
+
+  @@index([userId, date])
+  @@index([taskId, date])
+}
+
+model Allocation {
+  id                String   @id @default(uuid()) @db.Uuid
+  userId            String   @db.Uuid
+  user              User     @relation(fields: [userId], references: [id])
+  projectId         String   @db.Uuid
+  project           Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// Percent allocation as integer 0..100.
+  percentAllocation Int
+  periodStart       DateTime @db.Date
+  periodEnd         DateTime @db.Date
+  notes             String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([userId, periodStart, periodEnd])
+  @@index([projectId])
 }
 
 // ---------- Audit log (soft-delete + history) ----------

@@ -288,6 +288,258 @@ async function main() {
   }
   console.info(`  ${userInputs.length} users (including admin@cestech.in for dev auth)`);
 
+  // ---- Engineer #2 for allocation/overlap demos ----
+  await prisma.user.upsert({
+    where: { email: 'engineer2@cestech.in' },
+    update: { displayName: 'Eng Priya', roles: ['ENGINEER'] },
+    create: {
+      azureOid: 'dev-engineer2@cestech.in',
+      email: 'engineer2@cestech.in',
+      displayName: 'Eng Priya',
+      jobTitle: 'Network Engineer',
+      gradeId: grades.find((g) => g.code === 'L3')!.id,
+      roles: ['ENGINEER'],
+    },
+  });
+
+  // ---- Sample clients + end customer + project (so /projects has data) ----
+  const nttClient = await prisma.client.upsert({
+    where: { name: 'NTT Data' },
+    update: { kind: 'SI' },
+    create: { name: 'NTT Data', kind: 'SI' },
+  });
+  const airtelClient = await prisma.client.upsert({
+    where: { name: 'Airtel Business' },
+    update: { kind: 'SI' },
+    create: { name: 'Airtel Business', kind: 'SI' },
+  });
+  const sbiEC = await prisma.endCustomer.upsert({
+    where: { name: 'State Bank of India' },
+    update: { industry: 'Banking' },
+    create: { name: 'State Bank of India', industry: 'Banking' },
+  });
+  const aaiEC = await prisma.endCustomer.upsert({
+    where: { name: 'Airports Authority of India' },
+    update: { industry: 'Aviation' },
+    create: { name: 'Airports Authority of India', industry: 'Aviation' },
+  });
+
+  const pm = await prisma.user.findFirstOrThrow({ where: { email: 'pm@cestech.in' } });
+  const eng1 = await prisma.user.findFirstOrThrow({ where: { email: 'engineer@cestech.in' } });
+  const eng2 = await prisma.user.findFirstOrThrow({ where: { email: 'engineer2@cestech.in' } });
+
+  // Reset projects/tasks/timelogs each seed run so the sample data stays predictable.
+  await prisma.timeLog.deleteMany({});
+  await prisma.task.deleteMany({});
+  await prisma.allocation.deleteMany({});
+  await prisma.milestone.deleteMany({});
+  await prisma.projectSite.deleteMany({});
+  await prisma.project.deleteMany({ where: { code: { in: ['SBI-ACI-001', 'AAI-SDWAN-002'] } } });
+
+  const projectSeeds = [
+    {
+      code: 'SBI-ACI-001',
+      name: 'SBI Mumbai DC — Cisco ACI rollout',
+      clientId: nttClient.id,
+      endCustomerId: sbiEC.id,
+      whiteLabel: true,
+      category: 'ACI' as const,
+      billingModel: 'FIXED_PRICE' as const,
+      contractValue: '4500000',
+      contractCurrency: 'INR',
+      pmId: pm.id,
+      plannedStart: new Date('2025-04-01'),
+      plannedEnd: new Date('2025-09-30'),
+      status: 'ACTIVE' as const,
+      milestones: [
+        {
+          name: 'LLD sign-off',
+          value: '900000',
+          plannedDate: '2025-05-15',
+          signedOffDate: '2025-05-22',
+        },
+        {
+          name: 'Fabric build + migration',
+          value: '2700000',
+          plannedDate: '2025-08-15',
+          signedOffDate: null,
+        },
+        {
+          name: 'Hand-over + closure',
+          value: '900000',
+          plannedDate: '2025-09-30',
+          signedOffDate: null,
+        },
+      ],
+      tasks: [
+        {
+          name: 'LLD document',
+          status: 'DONE' as const,
+          percentComplete: 100,
+          assignee: eng1.id,
+          hours: 16,
+        },
+        {
+          name: 'Spine-leaf bring-up',
+          status: 'IN_PROGRESS' as const,
+          percentComplete: 60,
+          assignee: eng1.id,
+          hours: 24,
+        },
+        {
+          name: 'VRF + bridge domain config',
+          status: 'IN_PROGRESS' as const,
+          percentComplete: 40,
+          assignee: eng2.id,
+          hours: 12,
+        },
+        {
+          name: 'Migration cutover (Mumbai)',
+          status: 'TODO' as const,
+          percentComplete: 0,
+          assignee: eng2.id,
+          hours: 0,
+        },
+      ],
+    },
+    {
+      code: 'AAI-SDWAN-002',
+      name: 'AAI airports — SD-WAN rollout (40 sites)',
+      clientId: airtelClient.id,
+      endCustomerId: aaiEC.id,
+      whiteLabel: false,
+      category: 'SD_WAN' as const,
+      billingModel: 'MILESTONE' as const,
+      contractValue: '6800000',
+      contractCurrency: 'INR',
+      pmId: pm.id,
+      plannedStart: new Date('2025-05-01'),
+      plannedEnd: new Date('2025-12-31'),
+      status: 'ACTIVE' as const,
+      milestones: [
+        {
+          name: 'Design & pilot (1 site)',
+          value: '1200000',
+          plannedDate: '2025-06-15',
+          signedOffDate: '2025-06-20',
+        },
+        {
+          name: 'Wave 1 — 15 sites live',
+          value: '2400000',
+          plannedDate: '2025-09-30',
+          signedOffDate: null,
+        },
+        {
+          name: 'Wave 2 — 25 sites live',
+          value: '2400000',
+          plannedDate: '2025-11-30',
+          signedOffDate: null,
+        },
+        { name: 'Final closure', value: '800000', plannedDate: '2025-12-31', signedOffDate: null },
+      ],
+      tasks: [
+        {
+          name: 'Design template',
+          status: 'DONE' as const,
+          percentComplete: 100,
+          assignee: pm.id,
+          hours: 8,
+        },
+        {
+          name: 'Pilot site (Delhi)',
+          status: 'DONE' as const,
+          percentComplete: 100,
+          assignee: eng1.id,
+          hours: 20,
+        },
+        {
+          name: 'Wave-1 deployment',
+          status: 'IN_PROGRESS' as const,
+          percentComplete: 35,
+          assignee: eng2.id,
+          hours: 40,
+        },
+        {
+          name: 'Wave-2 deployment',
+          status: 'TODO' as const,
+          percentComplete: 0,
+          assignee: eng2.id,
+          hours: 0,
+        },
+      ],
+    },
+  ];
+
+  for (const p of projectSeeds) {
+    const proj = await prisma.project.create({
+      data: {
+        code: p.code,
+        name: p.name,
+        clientId: p.clientId,
+        endCustomerId: p.endCustomerId,
+        whiteLabel: p.whiteLabel,
+        category: p.category,
+        billingModel: p.billingModel,
+        contractValue: p.contractValue,
+        contractCurrency: p.contractCurrency,
+        pmId: p.pmId,
+        plannedStart: p.plannedStart,
+        plannedEnd: p.plannedEnd,
+        status: p.status,
+        milestones: {
+          create: p.milestones.map((m) => ({
+            name: m.name,
+            value: m.value,
+            currency: 'INR',
+            plannedDate: new Date(m.plannedDate),
+            signedOffDate: m.signedOffDate ? new Date(m.signedOffDate) : null,
+          })),
+        },
+      },
+    });
+
+    for (const t of p.tasks) {
+      const task = await prisma.task.create({
+        data: {
+          projectId: proj.id,
+          name: t.name,
+          status: t.status,
+          percentComplete: t.percentComplete,
+          assigneeId: t.assignee,
+        },
+      });
+      if (t.hours > 0) {
+        // Spread the hours across a few days starting 7 days ago so the P&L has data.
+        const days = Math.ceil(t.hours / 8);
+        const per = t.hours / days;
+        for (let i = 0; i < days; i++) {
+          const d = new Date();
+          d.setUTCDate(d.getUTCDate() - (days - i));
+          await prisma.timeLog.create({
+            data: {
+              taskId: task.id,
+              userId: t.assignee,
+              date: d,
+              hours: per.toFixed(2),
+            },
+          });
+        }
+      }
+    }
+
+    // Allocate engineers to the project (current month).
+    const now = new Date();
+    const periodStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const periodEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0));
+    await prisma.allocation.createMany({
+      data: [
+        { userId: eng1.id, projectId: proj.id, percentAllocation: 50, periodStart, periodEnd },
+        { userId: eng2.id, projectId: proj.id, percentAllocation: 50, periodStart, periodEnd },
+      ],
+    });
+  }
+  console.info(`  ${projectSeeds.length} projects with milestones, tasks, time logs, allocations`);
+
   console.info('Seed complete.');
 }
 

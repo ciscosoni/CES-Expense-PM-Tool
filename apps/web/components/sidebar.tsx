@@ -50,14 +50,12 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
         label: 'Projects',
         icon: FolderKanban,
         roles: ['ADMIN', 'PROJECT_MANAGER', 'ENGINEER'],
-        stub: true,
       },
       {
         href: '/tasks',
         label: 'My Tasks',
         icon: ClipboardList,
         roles: ['ENGINEER', 'PROJECT_MANAGER', 'ADMIN'],
-        stub: true,
       },
       {
         href: '/travel',

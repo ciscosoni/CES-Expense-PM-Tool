@@ -12,6 +12,9 @@ import { DaPoliciesModule } from './da-policies/da-policies.module.js';
 import { ClientsModule } from './clients/clients.module.js';
 import { EndCustomersModule } from './end-customers/end-customers.module.js';
 import { UsersModule } from './users/users.module.js';
+import { ProjectsModule } from './projects/projects.module.js';
+import { TasksModule } from './tasks/tasks.module.js';
+import { AllocationsModule } from './allocations/allocations.module.js';
 
 @Module({
   imports: [
@@ -28,6 +31,10 @@ import { UsersModule } from './users/users.module.js';
     DaPoliciesModule,
     ClientsModule,
     EndCustomersModule,
+    // Work
+    ProjectsModule,
+    TasksModule,
+    AllocationsModule,
   ],
   controllers: [HealthController],
 })
