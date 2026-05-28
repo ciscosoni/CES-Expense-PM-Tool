@@ -11,6 +11,7 @@ import { EntitlementMatrixModule } from './entitlement-matrix/entitlement-matrix
 import { DaPoliciesModule } from './da-policies/da-policies.module.js';
 import { ClientsModule } from './clients/clients.module.js';
 import { EndCustomersModule } from './end-customers/end-customers.module.js';
+import { UsersModule } from './users/users.module.js';
 
 @Module({
   imports: [
@@ -18,6 +19,7 @@ import { EndCustomersModule } from './end-customers/end-customers.module.js';
     PrismaModule,
     AuditModule,
     AuthModule,
+    UsersModule,
     // Master data
     GradesModule,
     CostRatesModule,
