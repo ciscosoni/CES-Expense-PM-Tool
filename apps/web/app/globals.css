@@ -3,59 +3,166 @@
 @tailwind utilities;
 
 @layer base {
+  /* Light mode — kept tight so toggle remains usable but dark is the default. */
   :root {
     --background: 0 0% 100%;
-    --foreground: 222.2 47.4% 11.2%;
+    --foreground: 240 10% 9%;
     --card: 0 0% 100%;
-    --card-foreground: 222.2 47.4% 11.2%;
+    --card-foreground: 240 10% 9%;
     --popover: 0 0% 100%;
-    --popover-foreground: 222.2 47.4% 11.2%;
-    --primary: 221.2 83.2% 53.3%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96.1%;
-    --secondary-foreground: 222.2 47.4% 11.2%;
-    --muted: 210 40% 96.1%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96.1%;
-    --accent-foreground: 222.2 47.4% 11.2%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83.2% 53.3%;
+    --popover-foreground: 240 10% 9%;
+    --primary: 217 91% 60%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 240 5% 96%;
+    --secondary-foreground: 240 10% 9%;
+    --muted: 240 5% 96%;
+    --muted-foreground: 240 4% 46%;
+    --accent: 240 5% 96%;
+    --accent-foreground: 240 10% 9%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 240 6% 90%;
+    --input: 240 6% 90%;
+    --ring: 217 91% 60%;
     --radius: 0.5rem;
+
+    /* AI-feature accent gradient anchors (Principle: subtle, not distracting). */
+    --ai-from: 250 84% 67%;
+    --ai-via: 217 91% 60%;
+    --ai-to: 198 93% 60%;
   }
 
+  /* Dark mode — Linear-style: warm zinc base, blue-violet primary, ample contrast. */
   .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 47.4% 11.2%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 224.3 76.3% 48%;
+    --background: 240 10% 4%;
+    --foreground: 0 0% 98%;
+    --card: 240 7% 7%;
+    --card-foreground: 0 0% 98%;
+    --popover: 240 7% 7%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 217 91% 65%;
+    --primary-foreground: 240 10% 9%;
+    --secondary: 240 5% 12%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 240 4% 14%;
+    --muted-foreground: 240 5% 65%;
+    --accent: 240 5% 14%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 240 5% 16%;
+    --input: 240 5% 16%;
+    --ring: 217 91% 65%;
+
+    --ai-from: 263 70% 62%;
+    --ai-via: 217 91% 65%;
+    --ai-to: 198 93% 65%;
   }
 
   * {
     @apply border-border;
   }
+
   html,
   body {
     height: 100%;
   }
+
   body {
     @apply bg-background text-foreground antialiased;
+    font-feature-settings:
+      'cv11',
+      'ss01',
+      'ss02';
+    /* Tabular figures so numbers stay aligned in tables — kills layout shift on
+       count tickers and currency columns. */
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Keep focus rings visible everywhere — required for keyboard nav (WCAG). */
+  :focus-visible {
+    outline: 2px solid hsl(var(--ring));
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  /* Smooth, system-friendly scrollbars in dark mode. */
+  .dark ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  .dark ::-webkit-scrollbar-track {
+    background: hsl(var(--background));
+  }
+  .dark ::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted));
+    border-radius: 8px;
+    border: 2px solid hsl(var(--background));
+  }
+  .dark ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--accent));
+  }
+}
+
+@layer utilities {
+  /* AI-feature surface treatment: 1px gradient border + soft inner glow.
+     Use sparingly — reserve for genuinely AI-assisted UI affordances. */
+  .ai-surface {
+    position: relative;
+    background: linear-gradient(
+      135deg,
+      hsl(var(--ai-from) / 0.06),
+      hsl(var(--ai-to) / 0.06)
+    );
+  }
+  .ai-surface::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(
+      135deg,
+      hsl(var(--ai-from) / 0.55),
+      hsl(var(--ai-via) / 0.45),
+      hsl(var(--ai-to) / 0.55)
+    );
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+    pointer-events: none;
+  }
+
+  .ai-gradient-text {
+    background: linear-gradient(
+      135deg,
+      hsl(var(--ai-from)),
+      hsl(var(--ai-via)),
+      hsl(var(--ai-to))
+    );
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* For card titles that should feel like polished metric chips. */
+  .num-display {
+    font-feature-settings: 'tnum' 1, 'ss01' 1;
+    letter-spacing: -0.02em;
+  }
+}
+
+/* Respect reduced motion — the design uses motion sparingly so we can disable
+   essentially all of it for users who prefer no animation. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }

@@ -27,13 +27,18 @@ export class ProjectsController {
   constructor(private readonly projects: ProjectsService) {}
 
   @Get()
-  @ApiOperation({ summary: 'List projects (filterable by status / pmId / clientId)' })
+  @ApiOperation({
+    summary:
+      'List projects (auto-scoped by role: ADMIN/FINANCE see all, OWNER sees owned, PM sees managed, ENGINEER sees assigned).',
+  })
   list(
+    @CurrentUser() user: AuthedUser,
     @Query('status') status?: ProjectStatus,
     @Query('pmId') pmId?: string,
+    @Query('ownerId') ownerId?: string,
     @Query('clientId') clientId?: string,
   ) {
-    return this.projects.list({ status, pmId, clientId });
+    return this.projects.list(user, { status, pmId, ownerId, clientId });
   }
 
   @Get(':id')
@@ -42,13 +47,16 @@ export class ProjectsController {
   }
 
   @Post()
-  @Roles('ADMIN', 'PROJECT_MANAGER')
+  @Roles('ADMIN', 'PROJECT_OWNER')
+  @ApiOperation({
+    summary: 'Create project. Only ADMIN or PROJECT_OWNER can create (Slice 2B redesign).',
+  })
   create(@Body() body: CreateProjectDto, @CurrentUser() user: AuthedUser) {
     return this.projects.create(body, user.id);
   }
 
   @Patch(':id')
-  @Roles('ADMIN', 'PROJECT_MANAGER')
+  @Roles('ADMIN', 'PROJECT_OWNER', 'PROJECT_MANAGER')
   update(
     @Param('id', new ParseUUIDPipe()) id: string,
     @Body() body: UpdateProjectDto,
@@ -58,7 +66,7 @@ export class ProjectsController {
   }
 
   @Delete(':id')
-  @Roles('ADMIN', 'PROJECT_MANAGER')
+  @Roles('ADMIN', 'PROJECT_OWNER')
   @HttpCode(HttpStatus.NO_CONTENT)
   async delete(@Param('id', new ParseUUIDPipe()) id: string, @CurrentUser() user: AuthedUser) {
     await this.projects.softDelete(id, user.id);

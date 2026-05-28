@@ -15,9 +15,11 @@ const ENTITY = 'Expense';
 
 const EXPENSE_INCLUDE = {
   user: { select: { id: true, displayName: true, email: true } },
-  project: { select: { id: true, code: true, name: true, pmId: true } },
+  project: { select: { id: true, code: true, name: true, pmId: true, ownerId: true } },
   trip: { select: { id: true, actualStart: true, actualEnd: true } },
   approver: { select: { id: true, displayName: true, email: true } },
+  ownerApprover: { select: { id: true, displayName: true, email: true } },
+  rejectedBy: { select: { id: true, displayName: true, email: true } },
 } satisfies Prisma.ExpenseInclude;
 
 @Injectable()
@@ -31,7 +33,10 @@ export class ExpensesService {
     userId?: string | undefined;
     projectId?: string | undefined;
     status?: ExpenseStatus | undefined;
-    pendingForApproverId?: string | undefined;
+    /** Slice 2B: pending the Project Owner's first-level approval. */
+    pendingForOwnerId?: string | undefined;
+    /** Slice 2B: pending Finance's second-level approval. */
+    pendingForFinance?: boolean | undefined;
   }) {
     return this.prisma.expense.findMany({
       where: {
@@ -39,9 +44,10 @@ export class ExpensesService {
         ...(opts.userId ? { userId: opts.userId } : {}),
         ...(opts.projectId ? { projectId: opts.projectId } : {}),
         ...(opts.status ? { status: opts.status } : {}),
-        ...(opts.pendingForApproverId
-          ? { status: 'SUBMITTED', project: { pmId: opts.pendingForApproverId } }
+        ...(opts.pendingForOwnerId
+          ? { status: 'SUBMITTED', project: { ownerId: opts.pendingForOwnerId } }
           : {}),
+        ...(opts.pendingForFinance ? { status: 'OWNER_APPROVED' } : {}),
       },
       include: EXPENSE_INCLUDE,
       orderBy: [{ status: 'asc' }, { incurredOn: 'desc' }],
@@ -140,45 +146,84 @@ export class ExpensesService {
     return after;
   }
 
+  /**
+   * Two-step approval flow (Slice 2B):
+   *   SUBMITTED      → Owner approves    → OWNER_APPROVED
+   *   OWNER_APPROVED → Finance approves  → APPROVED (ready to pay)
+   *
+   * Anyone in the chain can REJECT with a reason; the audit log records who
+   * rejected at which step so the submitter sees a clear recovery path.
+   */
   async approve(id: string, actor: AuthedUser): Promise<Expense> {
     const before = await this.get(id);
-    this.assertCanApprove(before, actor);
-    if (before.status !== 'SUBMITTED') {
-      throw new BadRequestException(`Cannot approve from status ${before.status}`);
+
+    if (before.status === 'SUBMITTED') {
+      this.assertCanOwnerApprove(before, actor);
+      const after = await this.prisma.expense.update({
+        where: { id },
+        data: {
+          status: 'OWNER_APPROVED',
+          ownerApproverId: actor.id,
+          ownerApprovedAt: new Date(),
+          rejectReason: null,
+          rejectedById: null,
+        },
+      });
+      await this.audit.log({
+        entity: ENTITY,
+        entityId: id,
+        action: 'APPROVE_OWNER',
+        actorId: actor.id,
+        before,
+        after,
+      });
+      return after;
     }
-    const after = await this.prisma.expense.update({
-      where: { id },
-      data: {
-        status: 'APPROVED',
-        approverId: actor.id,
-        approvedAt: new Date(),
-        rejectReason: null,
-      },
-    });
-    await this.audit.log({
-      entity: ENTITY,
-      entityId: id,
-      action: 'APPROVE',
-      actorId: actor.id,
-      before,
-      after,
-    });
-    return after;
+
+    if (before.status === 'OWNER_APPROVED') {
+      this.assertCanFinanceApprove(actor);
+      const after = await this.prisma.expense.update({
+        where: { id },
+        data: {
+          status: 'APPROVED',
+          approverId: actor.id,
+          approvedAt: new Date(),
+          rejectReason: null,
+          rejectedById: null,
+        },
+      });
+      await this.audit.log({
+        entity: ENTITY,
+        entityId: id,
+        action: 'APPROVE_FINANCE',
+        actorId: actor.id,
+        before,
+        after,
+      });
+      return after;
+    }
+
+    throw new BadRequestException(
+      `Cannot approve from status ${before.status} — expected SUBMITTED (Owner step) or OWNER_APPROVED (Finance step).`,
+    );
   }
 
   async reject(id: string, input: RejectExpenseDto, actor: AuthedUser): Promise<Expense> {
     const before = await this.get(id);
-    this.assertCanApprove(before, actor);
-    if (before.status !== 'SUBMITTED') {
+    if (before.status !== 'SUBMITTED' && before.status !== 'OWNER_APPROVED') {
       throw new BadRequestException(`Cannot reject from status ${before.status}`);
+    }
+    if (before.status === 'SUBMITTED') {
+      this.assertCanOwnerApprove(before, actor);
+    } else {
+      this.assertCanFinanceApprove(actor);
     }
     const after = await this.prisma.expense.update({
       where: { id },
       data: {
         status: 'REJECTED',
-        approverId: actor.id,
-        approvedAt: new Date(),
         rejectReason: input.reason,
+        rejectedById: actor.id,
       },
     });
     await this.audit.log({
@@ -213,12 +258,27 @@ export class ExpensesService {
     });
   }
 
-  private assertCanApprove(e: { project: { pmId: string } | null }, actor: AuthedUser): void {
+  /**
+   * Owner step: only the project's Owner (or an Admin) can act.
+   * PMs no longer approve expenses — that's the founder's redesign.
+   */
+  private assertCanOwnerApprove(
+    e: { project: { ownerId: string | null; pmId: string } | null },
+    actor: AuthedUser,
+  ): void {
+    if (actor.roles.includes('ADMIN')) return;
+    if (e.project?.ownerId && e.project.ownerId === actor.id) return;
+    throw new ForbiddenException(
+      'Owner approval: only the project Owner (or an Admin) can approve at this step.',
+    );
+  }
+
+  /** Finance step: only Finance (or an Admin) can act. */
+  private assertCanFinanceApprove(actor: AuthedUser): void {
     if (actor.roles.includes('ADMIN')) return;
     if (actor.roles.includes('FINANCE')) return;
-    if (e.project && e.project.pmId === actor.id) return;
     throw new ForbiddenException(
-      'Only the project PM, FINANCE, or ADMIN can approve/reject this expense',
+      'Finance approval: only FINANCE (or an Admin) can approve at this step.',
     );
   }
 }

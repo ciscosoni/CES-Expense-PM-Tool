@@ -30,11 +30,14 @@ model User {
   timeLogs         TimeLog[]
   allocations      Allocation[]
   managedProjects  Project[]       @relation("ProjectPM")
+  ownedProjects    Project[]       @relation("ProjectOwner")
   travelRequests   TravelRequest[] @relation("TravelRequester")
   approvedTravels  TravelRequest[] @relation("TravelApprover")
-  expenses         Expense[]       @relation("ExpenseUser")
-  approvedExpenses Expense[]       @relation("ExpenseApprover")
-  reimbursements   Reimbursement[] @relation("ReimbursementUser")
+  expenses              Expense[]       @relation("ExpenseUser")
+  approvedExpenses      Expense[]       @relation("ExpenseApprover")
+  ownerApprovedExpenses Expense[]       @relation("ExpenseOwnerApprover")
+  rejectedExpenses      Expense[]       @relation("ExpenseRejector")
+  reimbursements        Reimbursement[] @relation("ReimbursementUser")
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
   deletedAt     DateTime?
@@ -43,6 +46,7 @@ model User {
 enum UserRole {
   ADMIN
   FINANCE
+  PROJECT_OWNER
   PROJECT_MANAGER
   APPROVER
   ENGINEER
@@ -196,6 +200,15 @@ model Project {
   includesPassthrough  Boolean         @default(false)
   pmId                 String          @db.Uuid
   pm                   User            @relation("ProjectPM", fields: [pmId], references: [id])
+  /// Project owner — has budget authority and 1st-level approval on expenses.
+  /// Per CLAUDE.md role model added in Slice 2B (2026-05-28 redesign).
+  ownerId              String?         @db.Uuid
+  owner                User?           @relation("ProjectOwner", fields: [ownerId], references: [id])
+  /// Total project budget set by the Owner. Distinct from contractValue
+  /// (contract is what we bill the client; budget is the cap the Owner manages
+  /// for internal spend like travel + expenses).
+  budget               Decimal?        @db.Decimal(18, 4)
+  budgetCurrency       String?         @db.Char(3)
   plannedStart         DateTime        @db.Date
   plannedEnd           DateTime        @db.Date
   status               ProjectStatus
@@ -395,6 +408,9 @@ enum ExpenseCategory {
 enum ExpenseStatus {
   DRAFT
   SUBMITTED
+  /// Project Owner's first-level approval. Cleared when Finance approves.
+  OWNER_APPROVED
+  /// Finance approved — ready to be batched into a Reimbursement.
   APPROVED
   REJECTED
   REIMBURSED
@@ -417,10 +433,17 @@ model Expense {
   receiptUrl      String?
   notes           String?
   status          ExpenseStatus   @default(DRAFT)
+  /// Owner who gave first-level (budget) approval.
+  ownerApproverId String?         @db.Uuid
+  ownerApprover   User?           @relation("ExpenseOwnerApprover", fields: [ownerApproverId], references: [id])
+  ownerApprovedAt DateTime?
+  /// Finance approver who gave final approval (last person to act).
   approverId      String?         @db.Uuid
   approver        User?           @relation("ExpenseApprover", fields: [approverId], references: [id])
   approvedAt      DateTime?
   rejectReason    String?
+  rejectedById    String?         @db.Uuid
+  rejectedBy      User?           @relation("ExpenseRejector", fields: [rejectedById], references: [id])
   reimbursementId String?         @db.Uuid
   reimbursement   Reimbursement?  @relation(fields: [reimbursementId], references: [id])
   receipts        Receipt[]

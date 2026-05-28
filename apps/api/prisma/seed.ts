@@ -257,6 +257,13 @@ async function main() {
       roles: ['FINANCE' as const],
     },
     {
+      email: 'owner@cestech.in',
+      displayName: 'Owner Vikram',
+      jobTitle: 'Project Owner / Director',
+      gradeCode: 'L5',
+      roles: ['PROJECT_OWNER' as const, 'APPROVER' as const],
+    },
+    {
       email: 'pm@cestech.in',
       displayName: 'PM Aishwarya',
       jobTitle: 'Project Manager',
@@ -324,11 +331,19 @@ async function main() {
     create: { name: 'Airports Authority of India', industry: 'Aviation' },
   });
 
+  const owner = await prisma.user.findFirstOrThrow({ where: { email: 'owner@cestech.in' } });
   const pm = await prisma.user.findFirstOrThrow({ where: { email: 'pm@cestech.in' } });
   const eng1 = await prisma.user.findFirstOrThrow({ where: { email: 'engineer@cestech.in' } });
   const eng2 = await prisma.user.findFirstOrThrow({ where: { email: 'engineer2@cestech.in' } });
 
-  // Reset projects/tasks/timelogs each seed run so the sample data stays predictable.
+  // Reset projects/tasks/timelogs/travel/expenses each seed run so the sample
+  // data stays predictable. Order matters: child rows before parents.
+  await prisma.receiptFlag.deleteMany({});
+  await prisma.receipt.deleteMany({});
+  await prisma.expense.deleteMany({});
+  await prisma.reimbursement.deleteMany({});
+  await prisma.trip.deleteMany({});
+  await prisma.travelRequest.deleteMany({});
   await prisma.timeLog.deleteMany({});
   await prisma.task.deleteMany({});
   await prisma.allocation.deleteMany({});
@@ -483,6 +498,10 @@ async function main() {
         contractValue: p.contractValue,
         contractCurrency: p.contractCurrency,
         pmId: p.pmId,
+        // Slice 2B: Owner Vikram owns both seeded projects; budget = 8% of contract.
+        ownerId: owner.id,
+        budget: (Number(p.contractValue) * 0.08).toFixed(2),
+        budgetCurrency: 'INR',
         plannedStart: p.plannedStart,
         plannedEnd: p.plannedEnd,
         status: p.status,

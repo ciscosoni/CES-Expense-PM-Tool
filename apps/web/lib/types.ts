@@ -1,6 +1,12 @@
 /** Shared TS types mirroring API DTOs. Hand-maintained for now; OpenAPI codegen later. */
 
-export type UserRole = 'ADMIN' | 'FINANCE' | 'PROJECT_MANAGER' | 'APPROVER' | 'ENGINEER';
+export type UserRole =
+  | 'ADMIN'
+  | 'FINANCE'
+  | 'PROJECT_OWNER'
+  | 'PROJECT_MANAGER'
+  | 'APPROVER'
+  | 'ENGINEER';
 
 export type CityTier = 'METRO' | 'TIER_2' | 'TIER_3' | 'INTERNATIONAL';
 

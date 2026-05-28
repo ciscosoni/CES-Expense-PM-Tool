@@ -41,9 +41,31 @@ export class ExpensesController {
   }
 
   @Get('inbox')
-  @ApiOperation({ summary: 'Pending expense approvals for current user (project PM)' })
+  @ApiOperation({
+    summary:
+      'Pending expense approvals. PROJECT_OWNER sees expenses on projects they own (1st step). FINANCE sees Owner-approved expenses ready for final approval (2nd step).',
+  })
   inbox(@CurrentUser() user: AuthedUser) {
-    return this.expenses.list({ pendingForApproverId: user.id });
+    if (user.roles.includes('FINANCE') || user.roles.includes('ADMIN')) {
+      // Finance/admin sees finance-step queue.
+      return this.expenses.list({ pendingForFinance: true });
+    }
+    if (user.roles.includes('PROJECT_OWNER')) {
+      return this.expenses.list({ pendingForOwnerId: user.id });
+    }
+    return [];
+  }
+
+  @Get('inbox/owner')
+  @ApiOperation({ summary: "Owner's first-level queue (SUBMITTED on owned projects)." })
+  inboxOwner(@CurrentUser() user: AuthedUser) {
+    return this.expenses.list({ pendingForOwnerId: user.id });
+  }
+
+  @Get('inbox/finance')
+  @ApiOperation({ summary: "Finance's second-level queue (OWNER_APPROVED across all projects)." })
+  inboxFinance() {
+    return this.expenses.list({ pendingForFinance: true });
   }
 
   @Get(':id')

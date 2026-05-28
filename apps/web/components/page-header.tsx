@@ -14,11 +14,11 @@ export function PageHeader({
 }) {
   return (
     <div className={cn('flex flex-wrap items-start justify-between gap-3 pb-6', className)}>
-      <div>
-        <h1 className="text-xl font-semibold tracking-tight">{title}</h1>
-        {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
+      <div className="min-w-0">
+        <h1 className="text-[22px] font-semibold tracking-tight">{title}</h1>
+        {description && <div className="mt-1 text-sm text-muted-foreground">{description}</div>}
       </div>
-      {actions && <div className="flex items-center gap-2">{actions}</div>}
+      {actions && <div className="flex flex-shrink-0 items-center gap-2">{actions}</div>}
     </div>
   );
 }
