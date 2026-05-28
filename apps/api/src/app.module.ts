@@ -20,6 +20,7 @@ import { ExpensesModule } from './expenses/expenses.module.js';
 import { ReceiptsModule } from './receipts/receipts.module.js';
 import { ReimbursementsModule } from './reimbursements/reimbursements.module.js';
 import { DashboardsModule } from './dashboards/dashboards.module.js';
+import { PayslipsModule } from './payslips/payslips.module.js';
 
 @Module({
   imports: [
@@ -45,6 +46,7 @@ import { DashboardsModule } from './dashboards/dashboards.module.js';
     ReceiptsModule,
     ReimbursementsModule,
     DashboardsModule,
+    PayslipsModule,
   ],
   controllers: [HealthController],
 })

@@ -82,10 +82,9 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
       },
       {
         href: '/approvals',
-        label: 'Approvals (legacy)',
+        label: 'Approvals hub',
         icon: ShieldCheck,
         roles: ['APPROVER', 'PROJECT_MANAGER', 'FINANCE', 'ADMIN'],
-        stub: true,
       },
     ],
   },
@@ -103,7 +102,6 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
         label: 'Payslips',
         icon: CreditCard,
         roles: ['FINANCE', 'ADMIN'],
-        stub: true,
       },
       {
         href: '/finance/reports',
