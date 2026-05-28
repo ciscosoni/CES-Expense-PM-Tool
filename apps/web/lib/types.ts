@@ -319,3 +319,79 @@ export interface Expense {
   trip: { id: string; actualStart: string; actualEnd: string | null } | null;
   approver: UserBrief | null;
 }
+
+// ---- Receipts ----
+
+export type ReceiptFlagKind =
+  | 'DUPLICATE_HASH'
+  | 'AMOUNT_OCR_MISMATCH'
+  | 'DATE_OUT_OF_TRIP'
+  | 'GPS_FAR_FROM_TRIP'
+  | 'SUSPICIOUS_VENDOR'
+  | 'NO_EXIF';
+
+export type ReceiptFlagSeverity = 'INFO' | 'WARN' | 'BLOCK';
+
+export interface ReceiptFlag {
+  id: string;
+  receiptId: string;
+  kind: ReceiptFlagKind;
+  severity: ReceiptFlagSeverity;
+  detail: string | null;
+  createdAt: string;
+}
+
+export interface Receipt {
+  id: string;
+  expenseId: string;
+  fileUrl: string;
+  contentType: string;
+  contentHash: string;
+  perceptualHash: string | null;
+  exifTimestamp: string | null;
+  exifLat: string | null;
+  exifLng: string | null;
+  ocrAmount: string | null;
+  flags: ReceiptFlag[];
+  createdAt: string;
+}
+
+// ---- Reimbursements ----
+
+export type ReimbursementStatus = 'PENDING' | 'APPROVED' | 'PAID' | 'CANCELLED';
+
+export interface Reimbursement {
+  id: string;
+  userId: string;
+  totalAmount: string;
+  currency: string;
+  status: ReimbursementStatus;
+  paidOn: string | null;
+  reference: string | null;
+  createdAt: string;
+  user: UserBrief;
+  expenses: Array<{
+    id: string;
+    category: ExpenseCategory;
+    amount: string;
+    currency: string;
+    incurredOn: string;
+    notes: string | null;
+    project: { id: string; code: string; name: string };
+  }>;
+}
+
+export interface ReimbursementEligibleGroup {
+  user: UserBrief;
+  totalAmount: string;
+  currency: string;
+  expenses: Array<{
+    id: string;
+    category: ExpenseCategory;
+    amount: string;
+    currency: string;
+    incurredOn: string;
+    notes: string | null;
+    project: { id: string; code: string; name: string };
+  }>;
+}

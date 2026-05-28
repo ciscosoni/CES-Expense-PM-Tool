@@ -5,7 +5,8 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Plus, Send } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, Send } from 'lucide-react';
+import { ReceiptUpload } from '@/components/expenses/receipt-upload';
 import { toast } from 'sonner';
 import { AdminShell } from '@/components/admin-shell';
 import { Badge } from '@/components/ui/badge';
@@ -113,34 +114,7 @@ export default function MyExpensesPage() {
             {expenses.isLoading && <TableEmpty colSpan={6}>Loading…</TableEmpty>}
             {expenses.data?.length === 0 && <TableEmpty colSpan={6}>No expenses yet.</TableEmpty>}
             {expenses.data?.map((e) => (
-              <TableRow key={e.id}>
-                <TableCell className="font-mono text-xs">{formatDate(e.incurredOn)}</TableCell>
-                <TableCell className="text-xs">{e.category.replace(/_/g, ' ')}</TableCell>
-                <TableCell>
-                  <div className="text-xs text-muted-foreground">{e.project.code}</div>
-                  {e.notes && <div className="text-sm">{e.notes}</div>}
-                  {e.rejectReason && (
-                    <div className="mt-1 text-xs text-destructive">Rejected: {e.rejectReason}</div>
-                  )}
-                </TableCell>
-                <TableCell className="text-right font-mono text-xs">
-                  {formatMoney(e.amount, e.currency)}
-                </TableCell>
-                <TableCell>
-                  <Badge className={`border ${STATUS_COLOR[e.status]}`}>{e.status}</Badge>
-                </TableCell>
-                <TableCell className="text-right">
-                  {(e.status === 'DRAFT' || e.status === 'REJECTED') && (
-                    <Button
-                      size="sm"
-                      onClick={() => submit.mutate(e.id)}
-                      disabled={submit.isPending}
-                    >
-                      <Send className="h-3.5 w-3.5" /> Submit
-                    </Button>
-                  )}
-                </TableCell>
-              </TableRow>
+              <ExpenseRow key={e.id} expense={e} submit={submit} />
             ))}
           </TableBody>
         </Table>
@@ -293,5 +267,62 @@ function Field({
       {children}
       {error && <p className="text-xs text-destructive">{error}</p>}
     </div>
+  );
+}
+
+function ExpenseRow({
+  expense,
+  submit,
+}: {
+  expense: Expense;
+  submit: { mutate: (id: string) => void; isPending: boolean };
+}) {
+  const [expanded, setExpanded] = React.useState(false);
+  return (
+    <>
+      <TableRow>
+        <TableCell className="font-mono text-xs">{formatDate(expense.incurredOn)}</TableCell>
+        <TableCell className="text-xs">{expense.category.replace(/_/g, ' ')}</TableCell>
+        <TableCell>
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="inline-flex items-center gap-1 text-left hover:underline"
+          >
+            {expanded ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
+            <span>
+              <span className="block text-xs text-muted-foreground">{expense.project.code}</span>
+              {expense.notes && <span className="text-sm">{expense.notes}</span>}
+            </span>
+          </button>
+          {expense.rejectReason && (
+            <div className="mt-1 text-xs text-destructive">Rejected: {expense.rejectReason}</div>
+          )}
+        </TableCell>
+        <TableCell className="text-right font-mono text-xs">
+          {formatMoney(expense.amount, expense.currency)}
+        </TableCell>
+        <TableCell>
+          <Badge className={`border ${STATUS_COLOR[expense.status]}`}>{expense.status}</Badge>
+        </TableCell>
+        <TableCell className="text-right">
+          {(expense.status === 'DRAFT' || expense.status === 'REJECTED') && (
+            <Button size="sm" onClick={() => submit.mutate(expense.id)} disabled={submit.isPending}>
+              <Send className="h-3.5 w-3.5" /> Submit
+            </Button>
+          )}
+        </TableCell>
+      </TableRow>
+      {expanded && (
+        <TableRow>
+          <TableCell colSpan={6} className="bg-muted/30 p-4">
+            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Receipts (anti-fraud detection runs on upload)
+            </p>
+            <ReceiptUpload expenseId={expense.id} />
+          </TableCell>
+        </TableRow>
+      )}
+    </>
   );
 }

@@ -17,6 +17,8 @@ import { TasksModule } from './tasks/tasks.module.js';
 import { AllocationsModule } from './allocations/allocations.module.js';
 import { TravelModule } from './travel/travel.module.js';
 import { ExpensesModule } from './expenses/expenses.module.js';
+import { ReceiptsModule } from './receipts/receipts.module.js';
+import { ReimbursementsModule } from './reimbursements/reimbursements.module.js';
 
 @Module({
   imports: [
@@ -39,6 +41,8 @@ import { ExpensesModule } from './expenses/expenses.module.js';
     AllocationsModule,
     TravelModule,
     ExpensesModule,
+    ReceiptsModule,
+    ReimbursementsModule,
   ],
   controllers: [HealthController],
 })

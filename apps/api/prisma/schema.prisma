@@ -423,6 +423,7 @@ model Expense {
   rejectReason    String?
   reimbursementId String?         @db.Uuid
   reimbursement   Reimbursement?  @relation(fields: [reimbursementId], references: [id])
+  receipts        Receipt[]
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
   deletedAt       DateTime?
@@ -452,6 +453,60 @@ model Reimbursement {
   updatedAt   DateTime            @updatedAt
 
   @@index([userId, status])
+}
+
+// ---------- Receipts (with fraud-detection flags) ----------
+
+enum ReceiptFlagKind {
+  DUPLICATE_HASH
+  AMOUNT_OCR_MISMATCH
+  DATE_OUT_OF_TRIP
+  GPS_FAR_FROM_TRIP
+  SUSPICIOUS_VENDOR
+  NO_EXIF
+}
+
+enum ReceiptFlagSeverity {
+  INFO
+  WARN
+  BLOCK
+}
+
+model Receipt {
+  id             String        @id @default(uuid()) @db.Uuid
+  expenseId      String        @db.Uuid
+  expense        Expense       @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+  fileUrl        String
+  contentType    String
+  /// SHA-256 hex of the raw bytes — exact dup detection.
+  contentHash    String        @db.Char(64)
+  /// 64-bit perceptual hash (hex) for near-duplicate detection.
+  perceptualHash String?       @db.Char(16)
+  exifTimestamp  DateTime?
+  exifLat        Decimal?      @db.Decimal(9, 6)
+  exifLng        Decimal?      @db.Decimal(9, 6)
+  /// OCR'd vendor + amount + date (JSON). Stored verbatim for audit.
+  ocrJson        Json?
+  ocrAmount      Decimal?      @db.Decimal(14, 4)
+  flags          ReceiptFlag[]
+  createdAt      DateTime      @default(now())
+
+  @@index([expenseId])
+  @@index([contentHash])
+  @@index([perceptualHash])
+}
+
+model ReceiptFlag {
+  id        String              @id @default(uuid()) @db.Uuid
+  receiptId String              @db.Uuid
+  receipt   Receipt             @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  kind      ReceiptFlagKind
+  severity  ReceiptFlagSeverity
+  detail    String?
+  createdAt DateTime            @default(now())
+
+  @@index([receiptId])
+  @@index([kind])
 }
 
 // ---------- Audit log (soft-delete + history) ----------

@@ -98,7 +98,6 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
         label: 'Reimbursements',
         icon: Wallet,
         roles: ['FINANCE', 'ADMIN'],
-        stub: true,
       },
       {
         href: '/finance/payslips',
