@@ -1,0 +1,8 @@
+# Compiled Bicep output — don't commit
+*.json
+!main.parameters.example.json
+
+# Local parameter files with real values
+main.parameters.json
+main.parameters.*.json
+!main.parameters.example.json

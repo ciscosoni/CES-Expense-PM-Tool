@@ -30,7 +30,11 @@ export class AiService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
   ) {
-    const apiKey = process.env.ANTHROPIC_API_KEY?.trim();
+    const rawKey = process.env.ANTHROPIC_API_KEY?.trim();
+    // The Bicep template stores the literal '_unset_' when no key was supplied
+    // at deploy time — treat it the same as a missing key so the wizard still
+    // works (falls back to the mock).
+    const apiKey = !rawKey || rawKey === '_unset_' ? '' : rawKey;
     this.model = process.env.ANTHROPIC_MODEL?.trim() || 'claude-opus-4-7';
     this.client = apiKey ? new Anthropic({ apiKey }) : null;
     if (!this.client) {

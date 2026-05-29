@@ -70,20 +70,87 @@ GitHub Actions for build + push, GHCR for image hosting (free for public repos, 
 
 ---
 
-## Batch 3 — Azure provisioning + first deploy (together)
+## Batch 3 — Azure provisioning + first deploy (together) — code ready ✓
 
-Bicep IaC that provisions every Azure resource and deploys the api + web. You run `az login` and the deployment command; I write the templates and walk you through it.
+Single-file Bicep + interactive bootstrap script. You run `az` interactively; code is committed.
 
-- [ ] `infra/main.bicep` — Resource Group, Log Analytics, Container Apps Environment, Postgres Flexible Server, Key Vault, Storage Account
-- [ ] `infra/containerapp-api.bicep` — Container App with managed identity, KV secret refs, ingress
-- [ ] `infra/containerapp-web.bicep` — same for web
-- [ ] `infra/parameters.<env>.json` — dev/staging/prod parameter files
-- [ ] One-shot bootstrap script: provision → run migrations → seed → smoke-test
-- [ ] Document `az deployment sub create` invocation
+- [x] `infra/main.bicep` — Resource Group, Log Analytics, Container Apps Environment, Postgres Flexible Server, Key Vault, Storage Account, **both** Container Apps (api + web), user-assigned managed identity with `Key Vault Secrets User` role assignment
+- [x] `infra/main.parameters.example.json` — defaults you can copy
+- [x] `infra/deploy.sh` — interactive one-shot: prompts for RG name + region + PG password (auto-generates if blank) + Anthropic key → `az group create` → `az deployment group create` → prints URLs + smoke-test commands
+- [x] `infra/seed-prod.sh` — reads `DATABASE_URL` from Key Vault, runs `prisma migrate deploy && prisma db seed` against the managed PG
+- [x] `infra/README.md` — resource map, cost table, update procedure
+- [ ] **YOUR TURN:** run the runbook below
+- [ ] Post-deploy: open the web URL, sign in as `admin@cestech.in` (dev-auth still on until Batch 4)
 
-**Together-step:** you click "Add Subscription", I give you the exact commands, you paste output back to me.
+### Runbook — your steps from here
 
-**Exit criteria:** `https://ces-api.thankful-X.centralindia.azurecontainerapps.io/api/health` → 200, the web URL serves login.
+**Prereqs (one-time, on your laptop):**
+
+```sh
+brew install azure-cli            # macOS; Windows: https://aka.ms/installazurecliwindows
+az login                           # browser opens — sign in with your CES tenant admin
+az account list -o table           # confirm the subscription you want to use
+az account set --subscription "<name or ID>"
+```
+
+**Wait for Batch 2's build to finish** (the workflow you triggered with the new PAT). Check the green tick at https://github.com/ciscosoni/CES-Expense-PM-Tool/actions. **Make both `ces-api` and `ces-web` packages public** at https://github.com/users/ciscosoni/packages — Container Apps won't be able to pull otherwise.
+
+**Then, from the repo root:**
+
+```sh
+bash infra/deploy.sh
+```
+
+You'll be prompted for:
+| Prompt | Default | Notes |
+|---|---|---|
+| Resource group name | `ces-prod-rg` | One RG per environment |
+| Region | `centralindia` | Locked to India for data residency |
+| Environment slug | `prod` | Affects resource names |
+| GHCR owner | `ciscosoni` | Where the images live |
+| API image tag | `latest` | `sha-XXXXXXX` for reproducibility |
+| Web image tag | `latest` | Same |
+| Postgres password | *(generated if blank)* | Copy + save somewhere — never logged anywhere else |
+| Anthropic API key | *(blank ok)* | AI flows fall back to mock when blank |
+
+First run takes **~6–10 minutes** (Postgres provisioning is the slow step). On success you'll see the live URLs and the smoke-test commands.
+
+**Seed sample data** (one-time, optional):
+
+```sh
+# Allow your laptop's IP to talk to the managed PG (firewall rule):
+MY_IP=$(curl -s ifconfig.me)
+az postgres flexible-server firewall-rule create \
+  --resource-group ces-prod-rg \
+  --name "$(az postgres flexible-server list -g ces-prod-rg --query '[0].name' -o tsv)" \
+  --rule-name laptop --start-ip-address "$MY_IP" --end-ip-address "$MY_IP"
+
+# Run the seed:
+bash infra/seed-prod.sh ces-prod-rg
+```
+
+**Smoke-test:**
+
+```sh
+# Use the URLs deploy.sh printed.
+curl -fsS https://ces-prod-api.<random>.centralindia.azurecontainerapps.io/api/health
+curl -fsS https://ces-prod-api.<random>.centralindia.azurecontainerapps.io/api/ready
+```
+
+**Exit criteria:** `https://ces-prod-api.../api/health` returns `{"status":"ok",…}`, `/api/ready` returns `{"checks":{"database":"ok"}}`, and the web URL serves the sign-in screen.
+
+### Rolling a new image
+
+After every push to `main`, GitHub Actions publishes new `latest` + `sha-XXXXXXX` tags. To pin one onto Container Apps:
+
+```sh
+az containerapp update --name ces-prod-api --resource-group ces-prod-rg \
+  --image ghcr.io/ciscosoni/ces-api:sha-<short>
+az containerapp update --name ces-prod-web --resource-group ces-prod-rg \
+  --image ghcr.io/ciscosoni/ces-web:sha-<short>
+```
+
+Or just re-run `bash infra/deploy.sh` with new image tags — same effect, slower.
 
 ---
 
