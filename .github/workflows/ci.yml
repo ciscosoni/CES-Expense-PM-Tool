@@ -1,0 +1,95 @@
+name: CI
+
+# Runs on every PR + every push to a non-main branch.
+# Verifies typecheck, tests, the workspace build, AND that the production
+# Dockerfiles still build (no push). Catches Dockerfile breaks before they
+# land on main.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches-ignore: [main]
+
+# Cancel older runs of the same branch when a new push arrives.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-test:
+    name: Lint, typecheck, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.12.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: pnpm --filter @ces/api exec prisma generate
+
+      - name: Typecheck (all workspaces)
+        run: pnpm typecheck
+
+      - name: Lint (best effort — non-blocking)
+        run: pnpm lint || echo "::warning::lint failed"
+
+      - name: Tests
+        run: pnpm test
+
+      - name: Build (all workspaces)
+        run: pnpm build
+
+  docker-build-check:
+    # Builds both production images WITHOUT pushing — confirms the multi-stage
+    # Dockerfiles still work after every PR. We only build linux/amd64 here
+    # for speed; multi-arch happens in build-and-push.yml on main.
+    name: Docker build check
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build API image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          platforms: linux/amd64
+          push: false
+          load: false
+          cache-from: type=gha,scope=api
+          cache-to: type=gha,mode=max,scope=api
+
+      - name: Build Web image (no push)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/web/Dockerfile
+          platforms: linux/amd64
+          push: false
+          load: false
+          # Dev placeholders so the standalone build still succeeds —
+          # production builds pass real values via build-and-push.yml.
+          build-args: |
+            NEXT_PUBLIC_API_BASE_URL=http://localhost:4000
+            NEXT_PUBLIC_AZURE_TENANT_ID=00000000-0000-0000-0000-000000000000
+            NEXT_PUBLIC_AZURE_WEB_CLIENT_ID=00000000-0000-0000-0000-000000000000
+          cache-from: type=gha,scope=web
+          cache-to: type=gha,mode=max,scope=web

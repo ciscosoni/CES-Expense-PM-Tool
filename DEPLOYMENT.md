@@ -35,18 +35,38 @@ Code-only batch — nothing touches a cloud account yet. Goal: a `docker compose
 
 ---
 
-## Batch 2 — CI + container registry (solo)
+## Batch 2 — CI + container registry (solo) ✓
 
-GitHub Actions for build + push, GHCR for image hosting (free for private repos).
+GitHub Actions for build + push, GHCR for image hosting (free for public repos, this one is public).
 
-- [ ] `.github/workflows/ci.yml` — typecheck + test + lint on every PR
-- [ ] `.github/workflows/build.yml` — multi-arch `linux/amd64,linux/arm64` docker build, push to `ghcr.io/<owner>/ces-api` and `ces-web` on `main` and version tags
-- [ ] pnpm + buildx layer caching for fast incrementals
-- [ ] Image tags: `latest`, `sha-<short>`, `v<semver>` (from git tags)
-- [ ] Branch protection note (require ci to pass before merge)
-- [ ] Document GHCR pull-secret creation for Azure Container Apps
+- [x] `.github/workflows/ci.yml` — pnpm install, typecheck, lint (non-blocking), tests, build, **plus** a Docker build check that builds both production images without pushing on every PR
+- [x] `.github/workflows/build-and-push.yml` — multi-arch `linux/amd64,linux/arm64` docker build, push to `ghcr.io/<owner>/ces-api` and `ces-web` on `main` + `v*.*.*` tags + manual dispatch
+- [x] pnpm cache (via `pnpm/action-setup` + `setup-node@v4`) + GHA buildx layer cache (`type=gha`)
+- [x] Image tags: `latest` (main only), `sha-<7>`, `v<semver>`, `<semver>`, `<major>.<minor>`, `<major>` (on tags)
+- [x] Job summary surfaces the pull commands so finding the image is one tab away
+- [x] Branch protection note (below)
+- [x] GHCR public-package note (below) — no pull secret needed for Container Apps
 
 **Exit criteria:** push to `main` produces a pull-able image; tagging `v0.1.0` produces a versioned release image.
+
+### One-time post-Batch-2 setup (your action, after the first push)
+
+1. **First push to main triggers `build-and-push.yml`.** Watch it at <https://github.com/ciscosoni/CES-Expense-PM-Tool/actions>. First multi-arch build takes ~8–12 min (cold cache); subsequent builds ~2–3 min.
+2. **Make the GHCR packages public** so Container Apps in Batch 3 doesn't need a pull secret:
+   - Go to <https://github.com/users/ciscosoni/packages> → click `ces-api`
+   - **Package settings** (right sidebar) → **Change visibility** → **Public**
+   - Repeat for `ces-web`
+   - One-time only. New tags inherit the visibility.
+3. **Branch protection on `main`** so CI must pass before merge:
+   - Repo → **Settings** → **Branches** → **Add branch ruleset**
+   - Targets: `main`
+   - **Require status checks**: `Lint, typecheck, test, build` and `Docker build check`
+   - **Require linear history** (recommended) + **Block force pushes**
+4. **(Batch 3) Configure GitHub variables** for production `NEXT_PUBLIC_*` baking — repo → **Settings → Secrets and variables → Actions → Variables**:
+   - `NEXT_PUBLIC_API_BASE_URL=https://api.ops.ces-pl.com`
+   - `NEXT_PUBLIC_AZURE_TENANT_ID=<your tenant id>`
+   - `NEXT_PUBLIC_AZURE_WEB_CLIENT_ID=<web app reg client id>`
+   - These are read by `build-and-push.yml`; without them it falls back to placeholders that work but won't talk to real auth.
 
 ---
 
