@@ -124,16 +124,25 @@ Profile  Payslip with line-by-line derivation. My entitlements. Compliance score
 ### Web (by role)
 
 ```
-LEADERSHIP    Live Ops map (who's where now), portfolio P&L (RAG + margin
-              trend + burn), today's reimbursement outflow, anomalies feed.
-PROJECT MGR   My projects (Gantt + Kanban toggle). Daily standup digest (auto).
-              Resource allocation with conflict highlights. Live P&L. CRs.
-FINANCE       Reimbursement queue (batch → bank file / Tally). Payslip
-              generation (preview derivation before lock). DA payout summary.
-ADMIN         Grades, cost rates, cities, entitlement matrix, DA policies.
-              Approval workflows (visual builder). Clients, end customers.
-              Users + role assignments.
+LEADERSHIP      Live Ops map (who's where now), portfolio P&L (RAG + margin
+                trend + burn), today's reimbursement outflow, anomalies feed.
+PROJECT OWNER   Owns a project end-to-end. Sees only owned projects + their
+                budget. First-level expense approver (before Finance).
+PROJECT MGR     My projects (Gantt + Kanban toggle). Daily standup digest (auto).
+                Resource allocation with conflict highlights. Live P&L. CRs.
+                Does NOT create projects (Owner/Admin do).
+FINANCE         Reimbursement queue (batch → bank file / Tally). Payslip
+                generation (preview derivation before lock). DA payout summary.
+                Second-level expense approver (after Owner).
+ADMIN           Grades, cost rates, cities, entitlement matrix, DA policies.
+                Approval workflows (visual builder). Clients, end customers.
+                Users + role assignments.
 ```
+
+Roles enum: `ADMIN, FINANCE, PROJECT_OWNER, PROJECT_MANAGER, APPROVER, ENGINEER`.
+Project visibility filter lives in `ProjectsService.visibilityWhere(actor)` — ADMIN/FINANCE see all; OWNER sees owned; PM sees managed; ENGINEER sees assigned (via tasks/allocs).
+
+**UI shell** (Phase 2A): Linear-style dark theme by default — HSL semantic tokens in `globals.css`, Inter font, gradient logo mark, role badges in sidebar, `⌘K` command palette (`components/command-palette.tsx`) for fuzzy nav, `Sparkline` + `AiBadge` primitives. New UI work follows `ui-ux-pro-max` rules (4.5:1 contrast, 150–300ms motion, reduced-motion support).
 
 ## 8. Core data model
 
@@ -230,6 +239,8 @@ State machine: `Draft → Submitted → PendingApproval(step n) → Approved | R
 - Every step transition writes an `AuditLog` row.
 - UI exposes SLA timers (how long pending) so silently-stuck items become visible.
 
+**Expense-specific 2-step flow** (Phase 2B): `SUBMITTED → OWNER_APPROVED → APPROVED`. Step 1 is the project's `PROJECT_OWNER` (stored as `ownerApproverId`/`ownerApprovedAt`); step 2 is `FINANCE`. Either step can reject (records `rejectedById` + required reason). Inbox routing: `PROJECT_OWNER` sees Owner queue at `/expenses/inbox/owner`, `FINANCE`/`ADMIN` see Finance queue at `/expenses/inbox/finance`.
+
 ### Receipt fraud detection (Phase 1)
 
 For every uploaded receipt, derive at upload time:
@@ -256,15 +267,22 @@ For every uploaded receipt, derive at upload time:
 
 ## 11. Phased delivery (revised after pain-point session)
 
-- **Phase 0 — Foundations:** monorepo ✓, Entra SSO + Graph sync, RBAC, master data, DA/P&L/Approval engines ✓, audit/soft-delete plumbing, local Postgres + first master-data module (Grades) end-to-end, CI
-- **Phase 1 — MVP:**
-  - Mobile: Today, Tasks, Trip-with-GPS, Receipts-with-EXIF+OCR+hash, Approval Inbox
-  - Web: Leadership Live Ops, Project P&L, Resource Utilization, Reimbursement Queue
-  - Daily Standup auto-publish flow (engineer → PM digest → leadership digest)
-  - Approval engine with SLA timers + required reject reasons
-  - Payslip derivation (transparent line-by-line)
-- **Phase 2:** Geofenced Attendance regularization, Project CRs (baseline vs current), Anomaly detection rules, Allocation conflict detector, Polymorphic Comments
-- **Phase 3:** Tally / SAP / payroll integrations, Teams / Outlook notifications via Graph, Reporting/BI exports
+- **Phase 0 — Foundations ✓:** monorepo, calc engines (`da-engine`, `pnl-engine`, `approval-engine`), Prisma schema + migrations, JWT/role guards (Entra wiring stubbed for local), audit/soft-delete plumbing, local Postgres via `docker-compose`, all 7 master-data modules end-to-end (Grades, CostRates, Cities, EntitlementMatrix, DaPolicies, Clients, EndCustomers), seed data.
+- **Phase 1 — MVP (web slices done; mobile pending):**
+  - **1A ✓** — Web foundation (Next.js App Router, shadcn/ui kit, sidebar/topbar, MSAL-stub auth) + admin CRUD for all 7 master-data resources.
+  - **1B ✓** — Projects + Tasks + TimeLogs + Allocations + live P&L (`apps/api/src/projects/pnl.service.ts`); per-project tabs: Overview, Tasks, Milestones, Team, P&L.
+  - **1C-α ✓** — Travel + DA: request → approve → trip → close, with live DA derivation surfaced in UI.
+  - **1C-β ✓** — Expenses + per-project approvals (required reject reasons).
+  - **1C-γ ✓** — Receipts with anti-fraud flags (DUPLICATE_HASH, AMOUNT_OCR_MISMATCH, DATE_OUT_OF_TRIP, GPS_FAR_FROM_TRIP) + Finance reimbursement queue.
+  - **1D ✓** — Leadership Live Ops dashboard (KPIs + portfolio P&L + utilization + anomalies feed).
+  - **1E ✓** — Payslip derivation (line-by-line, traceable to source) + Approvals hub.
+  - **Mobile (not started)** — Today, Tasks, Trip-with-GPS, Receipts-with-EXIF+OCR+hash, Approval Inbox.
+  - **Daily Standup auto-publish flow** (engineer → PM digest → leadership digest) — not started.
+- **Phase 2 — in progress:**
+  - **2A ✓** — Linear-style dark UI redesign (semantic tokens, command palette, sparklines, AI affordances).
+  - **2B ✓** — `PROJECT_OWNER` role + per-project `ownerId`/`budget` + 2-step expense approval (Owner → Finance, with `OWNER_APPROVED` intermediate state).
+  - **2C+ (not started)** — Geofenced Attendance regularization, Project CRs (baseline vs current), Anomaly detection rules, Allocation conflict detector, Polymorphic Comments, in-product Ask-AI (Cmd+K AI mode placeholder reserved).
+- **Phase 3:** Tally / SAP / payroll integrations, Teams / Outlook notifications via Graph, Reporting/BI exports.
 
 When picking up work mid-build, check `git log` + open tasks to see where Phase X stands.
 
