@@ -48,17 +48,30 @@ export class AuthGuard implements CanActivate {
 
     const req = ctx.switchToHttp().getRequest<Request & { user?: AuthedUser }>();
     const isProd = process.env.NODE_ENV === 'production';
+    const allowDevAuthInProd = process.env.ALLOW_DEV_AUTH_IN_PROD === 'true';
 
-    if (isProd) {
-      // TODO(phase-0): MSAL JWT validation via jwks-rsa
-      throw new UnauthorizedException('Production auth not yet implemented');
+    if (isProd && !allowDevAuthInProd) {
+      // MSAL JWT validation via jwks-rsa lands in Batch 4. Until then, a prod
+      // deploy can opt into the dev-header path with ALLOW_DEV_AUTH_IN_PROD=true
+      // ONLY if the environment is locked behind an IP allowlist or VPN —
+      // never open this on a public URL.
+      this.logger.warn(
+        `Blocked unauthenticated request to ${req.method} ${req.url} — Entra ID auth not wired yet. Set ALLOW_DEV_AUTH_IN_PROD=true to fall back to the dev-header path (private networks only).`,
+      );
+      throw new UnauthorizedException(
+        'Production authentication is not yet configured. See DEPLOYMENT.md Batch 4.',
+      );
     }
 
     const headerEmail = req.header('x-dev-user-email');
     const email =
       (typeof headerEmail === 'string' && headerEmail.trim()) ||
       process.env.DEV_AUTH_DEFAULT_EMAIL ||
-      'admin@cestech.in';
+      (isProd ? '' : 'admin@cestech.in');
+
+    if (!email) {
+      throw new UnauthorizedException('Missing X-Dev-User-Email header.');
+    }
 
     const user = await this.prisma.user.findFirst({
       where: { email: email.toLowerCase(), active: true, deletedAt: null },

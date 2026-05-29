@@ -1,0 +1,77 @@
+# Local production-mode test rig — builds the same images Container Apps will
+# run and stands up a Postgres alongside. Use this to validate the image
+# pipeline end-to-end before pushing to GHCR.
+#
+#   docker compose -f docker-compose.prod.yml up --build
+#
+# Once running:
+#   curl -s http://localhost:4000/api/health
+#   curl -s http://localhost:4000/api/ready
+#   open http://localhost:3000/login
+#
+# Auth: ALLOW_DEV_AUTH_IN_PROD=true is set so you can still sign in with the
+# dev header in this rig. NEVER set that on a real production deployment.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ces-prod-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ces
+      POSTGRES_PASSWORD: ces
+      POSTGRES_DB: ces_prod
+    volumes:
+      - ces-prod-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ces -d ces_prod']
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: ces-prod-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      API_PORT: 4000
+      DATABASE_URL: postgresql://ces:ces@postgres:5432/ces_prod?schema=public
+      RUN_MIGRATIONS: 'true'
+      ALLOW_DEV_AUTH_IN_PROD: 'true'
+      DEV_AUTH_DEFAULT_EMAIL: admin@cestech.in
+      LOG_LEVEL: info
+      APP_VERSION: local-prod
+      # Entra ID placeholders so loadApiEnv() doesn't reject. Real values land
+      # in Batch 4 + come from Key Vault in real deployments.
+      AZURE_TENANT_ID: 00000000-0000-0000-0000-000000000000
+      AZURE_API_CLIENT_ID: 00000000-0000-0000-0000-000000000000
+      AZURE_API_AUDIENCE: api://ces-internal
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    ports:
+      - '4000:4000'
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE_URL: http://api:4000
+    container_name: ces-prod-web
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      NEXT_PUBLIC_API_BASE_URL: http://api:4000
+    ports:
+      - '3000:3000'
+
+volumes:
+  ces-prod-postgres-data:

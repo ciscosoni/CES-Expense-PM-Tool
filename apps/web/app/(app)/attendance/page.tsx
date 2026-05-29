@@ -10,7 +10,7 @@ import { CalendarDays, MapPin, Plus, ShieldAlert, type LucideIcon } from 'lucide
 import { AdminShell } from '@/components/admin-shell';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader } from '@/components/ui/card';
 import {
   Dialog,
   DialogContent,

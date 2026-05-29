@@ -1,5 +1,7 @@
+import { randomUUID } from 'node:crypto';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
+import { LoggerModule } from 'nestjs-pino';
 import { HealthController } from './health.controller.js';
 import { PrismaModule } from './prisma.module.js';
 import { AuthModule } from './auth/auth.module.js';
@@ -27,9 +29,47 @@ import { CommentsModule } from './comments/comments.module.js';
 import { AnomaliesModule } from './anomalies/anomalies.module.js';
 import { AiModule } from './ai/ai.module.js';
 
+const isProd = process.env.NODE_ENV === 'production';
+
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
+    // Structured JSON logs in prod (pino) so Log Analytics can index them;
+    // pretty rainbow in dev so they're readable in the terminal. Request IDs
+    // are propagated as `x-request-id` so traces can be stitched across services.
+    LoggerModule.forRoot({
+      pinoHttp: {
+        level: process.env.LOG_LEVEL ?? (isProd ? 'info' : 'debug'),
+        genReqId: (req, res) => {
+          const incoming = (req.headers['x-request-id'] as string | undefined) ?? randomUUID();
+          res.setHeader('x-request-id', incoming);
+          return incoming;
+        },
+        autoLogging: {
+          ignore: (req) => {
+            const url = req.url ?? '';
+            return url === '/api/health' || url === '/api/ready';
+          },
+        },
+        // Redact obvious secrets from request logs.
+        redact: {
+          paths: [
+            'req.headers.authorization',
+            'req.headers.cookie',
+            'req.headers["x-dev-user-email"]',
+          ],
+          censor: '[redacted]',
+        },
+        ...(isProd
+          ? {}
+          : {
+              transport: {
+                target: 'pino-pretty',
+                options: { singleLine: true, translateTime: 'SYS:HH:MM:ss' },
+              },
+            }),
+      },
+    }),
     PrismaModule,
     AuditModule,
     AuthModule,
