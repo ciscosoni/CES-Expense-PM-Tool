@@ -9,11 +9,14 @@ import {
 } from '@/components/ui/table';
 import { serverFetch } from '@/lib/server-api';
 import { formatMoney } from '@/lib/format';
-import type { PnlResult } from '@/lib/types';
+import type { PnlResult, ProjectBaseline } from '@/lib/types';
 
 export default async function ProjectPnlPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const pnl = await serverFetch<PnlResult>(`/projects/${id}/pnl`);
+  const [pnl, baseline] = await Promise.all([
+    serverFetch<PnlResult>(`/projects/${id}/pnl`),
+    serverFetch<ProjectBaseline>(`/change-requests/projects/${id}/baseline`).catch(() => null),
+  ]);
   const ccy = pnl.revenue.currency;
   const rows: { label: string; amount: string; muted?: boolean }[] = [
     { label: 'Effort cost (time logs × cost rate)', amount: pnl.costBreakdown.effort },
@@ -62,6 +65,79 @@ export default async function ProjectPnlPage({ params }: { params: Promise<{ id:
         </Card>
       </div>
 
+      {baseline && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Baseline vs current</CardTitle>
+            <CardDescription>
+              Snapshot taken at first save vs the live project after approved Change Requests.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Field</TableHead>
+                  <TableHead className="text-right">Baseline</TableHead>
+                  <TableHead className="text-right">Current</TableHead>
+                  <TableHead className="text-right">Δ</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                <TableRow>
+                  <TableCell>Contract value</TableCell>
+                  <TableCell className="text-right font-mono text-xs">
+                    {formatMoney(baseline.baseline.contractValue, baseline.baseline.contractCurrency)}
+                  </TableCell>
+                  <TableCell className="text-right font-mono text-xs">
+                    {formatMoney(baseline.current.contractValue, baseline.current.contractCurrency)}
+                  </TableCell>
+                  <TableCell className="text-right font-mono text-xs">
+                    {signedMoney(baseline.delta.contractValue, baseline.current.contractCurrency)}
+                  </TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell>Budget</TableCell>
+                  <TableCell className="text-right font-mono text-xs">
+                    {baseline.baseline.budget
+                      ? formatMoney(
+                          baseline.baseline.budget,
+                          baseline.baseline.budgetCurrency ?? ccy,
+                        )
+                      : '—'}
+                  </TableCell>
+                  <TableCell className="text-right font-mono text-xs">
+                    {baseline.current.budget
+                      ? formatMoney(
+                          baseline.current.budget,
+                          baseline.current.budgetCurrency ?? ccy,
+                        )
+                      : '—'}
+                  </TableCell>
+                  <TableCell className="text-right font-mono text-xs">
+                    {signedMoney(baseline.delta.budget, baseline.current.budgetCurrency ?? ccy)}
+                  </TableCell>
+                </TableRow>
+                <TableRow>
+                  <TableCell>Planned end</TableCell>
+                  <TableCell className="text-right font-mono text-xs">
+                    {baseline.baseline.plannedEnd}
+                  </TableCell>
+                  <TableCell className="text-right font-mono text-xs">
+                    {baseline.current.plannedEnd}
+                  </TableCell>
+                  <TableCell className="text-right font-mono text-xs">
+                    {baseline.delta.days
+                      ? `${baseline.delta.days > 0 ? '+' : ''}${baseline.delta.days}d`
+                      : '0d'}
+                  </TableCell>
+                </TableRow>
+              </TableBody>
+            </Table>
+          </CardContent>
+        </Card>
+      )}
+
       <Card>
         <CardHeader>
           <CardTitle>Cost breakdown</CardTitle>
@@ -103,4 +179,11 @@ export default async function ProjectPnlPage({ params }: { params: Promise<{ id:
       </Card>
     </div>
   );
+}
+
+function signedMoney(amount: string, currency: string): string {
+  const n = Number(amount);
+  if (!Number.isFinite(n) || n === 0) return formatMoney('0', currency);
+  const sign = n > 0 ? '+' : '';
+  return `${sign}${formatMoney(amount, currency)}`;
 }

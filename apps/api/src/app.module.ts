@@ -21,6 +21,10 @@ import { ReceiptsModule } from './receipts/receipts.module.js';
 import { ReimbursementsModule } from './reimbursements/reimbursements.module.js';
 import { DashboardsModule } from './dashboards/dashboards.module.js';
 import { PayslipsModule } from './payslips/payslips.module.js';
+import { AttendanceModule } from './attendance/attendance.module.js';
+import { ChangeRequestsModule } from './change-requests/change-requests.module.js';
+import { CommentsModule } from './comments/comments.module.js';
+import { AnomaliesModule } from './anomalies/anomalies.module.js';
 
 @Module({
   imports: [
@@ -47,6 +51,11 @@ import { PayslipsModule } from './payslips/payslips.module.js';
     ReimbursementsModule,
     DashboardsModule,
     PayslipsModule,
+    // Phase 2C / 2D / 2E
+    AttendanceModule,
+    ChangeRequestsModule,
+    CommentsModule,
+    AnomaliesModule,
   ],
   controllers: [HealthController],
 })

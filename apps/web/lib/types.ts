@@ -401,3 +401,183 @@ export interface ReimbursementEligibleGroup {
     project: { id: string; code: string; name: string };
   }>;
 }
+
+// ---- Attendance (Slice 2C) ----
+
+export type AttendanceEventKind =
+  | 'CHECK_IN'
+  | 'CHECK_OUT'
+  | 'GEOFENCE_ENTER'
+  | 'GEOFENCE_EXIT'
+  | 'MANUAL_ENTRY';
+
+export type AttendanceDayStatus =
+  | 'ABSENT'
+  | 'REMOTE'
+  | 'ON_SITE'
+  | 'PARTIAL'
+  | 'REGULARIZED';
+
+export type RegularizationReason =
+  | 'REMOTE_WORK'
+  | 'MISSED_PUNCH'
+  | 'SITE_VISIT_NOT_GEOFENCED'
+  | 'SICK'
+  | 'PERSONAL'
+  | 'OTHER';
+
+export type RegularizationStatus = 'SUBMITTED' | 'APPROVED' | 'REJECTED' | 'CANCELLED';
+
+export interface AttendanceDay {
+  id: string;
+  userId: string;
+  date: string;
+  firstEventAt: string | null;
+  lastEventAt: string | null;
+  onSiteMinutes: number;
+  projectSiteIds: string[];
+  status: AttendanceDayStatus;
+  eventCount: number;
+  derivationNote: string | null;
+  regularizationId: string | null;
+  regularization?: AttendanceRegularization | null;
+  recomputedAt: string;
+}
+
+export interface AttendanceRegularization {
+  id: string;
+  userId: string;
+  date: string;
+  reason: RegularizationReason;
+  notes: string;
+  projectId: string | null;
+  status: RegularizationStatus;
+  approverId: string | null;
+  decidedAt: string | null;
+  rejectReason: string | null;
+  createdAt: string;
+  user: UserBrief;
+  project: { id: string; code: string; name: string } | null;
+  approver: UserBrief | null;
+}
+
+// ---- Change Requests (Slice 2D) ----
+
+export type ChangeRequestType = 'SCOPE' | 'TIME' | 'COST' | 'MIXED';
+export type ChangeRequestStatus =
+  | 'DRAFT'
+  | 'SUBMITTED'
+  | 'APPROVED'
+  | 'REJECTED'
+  | 'WITHDRAWN';
+
+export interface ChangeRequest {
+  id: string;
+  projectId: string;
+  code: string;
+  title: string;
+  type: ChangeRequestType;
+  reason: string;
+  contractValueDelta: string | null;
+  budgetDelta: string | null;
+  daysDelta: number | null;
+  scopeDelta: string | null;
+  status: ChangeRequestStatus;
+  submittedAt: string | null;
+  decidedAt: string | null;
+  rejectReason: string | null;
+  createdAt: string;
+  project: { id: string; code: string; name: string; pmId: string; ownerId: string | null };
+  createdBy: UserBrief;
+  approver: UserBrief | null;
+}
+
+export interface ProjectBaseline {
+  baseline: {
+    contractValue: string;
+    contractCurrency: string;
+    budget: string | null;
+    budgetCurrency: string | null;
+    plannedStart: string;
+    plannedEnd: string;
+    snapshotAt: string;
+  };
+  current: {
+    contractValue: string;
+    contractCurrency: string;
+    budget: string | null;
+    budgetCurrency: string | null;
+    plannedStart: string;
+    plannedEnd: string;
+  };
+  delta: {
+    contractValue: string;
+    budget: string;
+    days: number;
+  };
+}
+
+// ---- Comments (Slice 2E) ----
+
+export type CommentEntityKind =
+  | 'PROJECT'
+  | 'TASK'
+  | 'EXPENSE'
+  | 'TRIP'
+  | 'CHANGE_REQUEST'
+  | 'ATTENDANCE_REGULARIZATION'
+  | 'RECEIPT';
+
+export interface Comment {
+  id: string;
+  entityKind: CommentEntityKind;
+  entityId: string;
+  body: string;
+  parentId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  author: UserBrief;
+}
+
+// ---- Anomalies (Slice 2E) ----
+
+export type AnomalyKind =
+  | 'RECEIPT_DUPLICATE'
+  | 'RECEIPT_AMOUNT_MISMATCH'
+  | 'RECEIPT_DATE_OUT_OF_TRIP'
+  | 'RECEIPT_GPS_FAR'
+  | 'ALLOCATION_OVERBOOK'
+  | 'PROJECT_OVER_BUDGET'
+  | 'PROJECT_MARGIN_RED'
+  | 'EXPENSE_OVER_CAP'
+  | 'ATTENDANCE_NO_PUNCH'
+  | 'ATTENDANCE_REGULARIZATION_STALE';
+
+export type AnomalySeverity = 'INFO' | 'WARN' | 'CRITICAL';
+
+export interface AnomalyRule {
+  id: string;
+  kind: AnomalyKind;
+  name: string;
+  description: string;
+  severity: AnomalySeverity;
+  config: Record<string, unknown>;
+  enabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface Anomaly {
+  id: string;
+  kind: AnomalyKind;
+  severity: AnomalySeverity;
+  entityKind: string;
+  entityId: string;
+  fingerprint: string;
+  detail: string | null;
+  context: Record<string, unknown> | null;
+  detectedAt: string;
+  resolvedAt: string | null;
+  resolvedById: string | null;
+  resolutionNote: string | null;
+}

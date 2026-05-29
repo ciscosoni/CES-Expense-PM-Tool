@@ -67,6 +67,8 @@ export default async function ProjectLayout({
           { href: `/projects/${id}/team`, label: 'Team' },
           { href: `/projects/${id}/pnl`, label: 'P&L' },
           { href: `/projects/${id}/milestones`, label: 'Milestones' },
+          { href: `/projects/${id}/change-requests`, label: 'Change requests' },
+          { href: `/projects/${id}/discussion`, label: 'Discussion' },
         ]}
       />
       <div className="pt-6">{children}</div>

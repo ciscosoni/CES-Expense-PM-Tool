@@ -38,6 +38,13 @@ model User {
   ownerApprovedExpenses Expense[]       @relation("ExpenseOwnerApprover")
   rejectedExpenses      Expense[]       @relation("ExpenseRejector")
   reimbursements        Reimbursement[] @relation("ReimbursementUser")
+  attendanceEvents          AttendanceEvent[]          @relation("AttendanceEventUser")
+  attendanceDays            AttendanceDay[]            @relation("AttendanceDayUser")
+  attendanceRegularizations AttendanceRegularization[] @relation("AttendanceRegUser")
+  decidedRegularizations    AttendanceRegularization[] @relation("AttendanceRegApprover")
+  authoredComments          Comment[]                  @relation("CommentAuthor")
+  createdChangeRequests     ChangeRequest[]            @relation("ChangeRequestCreator")
+  decidedChangeRequests     ChangeRequest[]            @relation("ChangeRequestApprover")
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
   deletedAt     DateTime?
@@ -218,20 +225,24 @@ model Project {
   allocations          Allocation[]
   travelRequests       TravelRequest[]
   expenses             Expense[]
+  attendanceRegularizations AttendanceRegularization[]
+  changeRequests       ChangeRequest[]
+  baseline             ProjectBaseline?
   createdAt            DateTime        @default(now())
   updatedAt            DateTime        @updatedAt
   deletedAt            DateTime?
 }
 
 model ProjectSite {
-  id        String     @id @default(uuid()) @db.Uuid
-  projectId String     @db.Uuid
-  project   Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  siteName  String
-  cityId    String     @db.Uuid
-  city      City       @relation(fields: [cityId], references: [id])
-  address   String?
-  geofences Geofence[]
+  id               String            @id @default(uuid()) @db.Uuid
+  projectId        String            @db.Uuid
+  project          Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  siteName         String
+  cityId           String            @db.Uuid
+  city             City              @relation(fields: [cityId], references: [id])
+  address          String?
+  geofences        Geofence[]
+  attendanceEvents AttendanceEvent[]
 }
 
 /// Geofence around a project site. Mobile attendance check-in compares
@@ -530,6 +541,294 @@ model ReceiptFlag {
 
   @@index([receiptId])
   @@index([kind])
+}
+
+// ---------- Attendance (Slice 2C) ----------
+
+/// Raw mobile-emitted events. Daily summary (AttendanceDay) is derived.
+/// Per CLAUDE.md §10: source of truth for "was the engineer actually on site?"
+/// — defuses the manager-vs-engineer pain point.
+enum AttendanceEventKind {
+  CHECK_IN
+  CHECK_OUT
+  GEOFENCE_ENTER
+  GEOFENCE_EXIT
+  MANUAL_ENTRY
+}
+
+enum AttendanceEventSource {
+  MOBILE
+  WEB
+  MANUAL
+  SYSTEM
+}
+
+model AttendanceEvent {
+  id              String                @id @default(uuid()) @db.Uuid
+  userId          String                @db.Uuid
+  user            User                  @relation("AttendanceEventUser", fields: [userId], references: [id])
+  kind            AttendanceEventKind
+  occurredAt      DateTime
+  lat             Decimal?              @db.Decimal(9, 6)
+  lng             Decimal?              @db.Decimal(9, 6)
+  accuracyMeters  Int?
+  /// Site whose geofence the device was inside at the time of the event. NULL
+  /// when the event happened off-site (REMOTE work) or for MANUAL_ENTRY.
+  projectSiteId   String?               @db.Uuid
+  projectSite     ProjectSite?          @relation(fields: [projectSiteId], references: [id])
+  source          AttendanceEventSource @default(MOBILE)
+  createdAt       DateTime              @default(now())
+
+  @@index([userId, occurredAt])
+  @@index([projectSiteId, occurredAt])
+}
+
+enum AttendanceDayStatus {
+  ABSENT
+  REMOTE
+  ON_SITE
+  PARTIAL
+  REGULARIZED
+}
+
+/// Persisted derivation of a user's day so queries (calendar, KPIs) are cheap.
+/// Recomputed on event ingest + on regularization approval. The derivation
+/// reasoning is stored in `notes` so the engineer can see why the system
+/// marked their day the way it did (Principle #3).
+model AttendanceDay {
+  id              String              @id @default(uuid()) @db.Uuid
+  userId          String              @db.Uuid
+  user            User                @relation("AttendanceDayUser", fields: [userId], references: [id])
+  date            DateTime            @db.Date
+  firstEventAt    DateTime?
+  lastEventAt     DateTime?
+  /// Minutes the user was inside any project site geofence during this day.
+  onSiteMinutes   Int                 @default(0)
+  /// JSON array of ProjectSite IDs the user touched today.
+  projectSiteIds  Json                @default("[]")
+  status          AttendanceDayStatus @default(ABSENT)
+  eventCount      Int                 @default(0)
+  /// Plain-English derivation log, e.g. "ON_SITE: 5h 23m inside SBI-Mumbai-DC geofence".
+  derivationNote  String?
+  /// When a regularization decision flips this day's effective status.
+  regularizationId String?            @unique @db.Uuid
+  regularization   AttendanceRegularization? @relation("DayRegularization", fields: [regularizationId], references: [id])
+  recomputedAt    DateTime            @default(now())
+
+  @@unique([userId, date])
+  @@index([date, status])
+}
+
+enum RegularizationReason {
+  REMOTE_WORK
+  MISSED_PUNCH
+  SITE_VISIT_NOT_GEOFENCED
+  SICK
+  PERSONAL
+  OTHER
+}
+
+enum RegularizationStatus {
+  SUBMITTED
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+/// Engineer-submitted ask to override the system's derived status for a day.
+/// Required because GPS/geofence is imperfect — site GPS may be off, customer
+/// site may have no geofence configured yet, engineer may have been at a
+/// supporting location (e.g. spares pickup). Approval lives with the
+/// engineer's reporting manager OR the project owner.
+model AttendanceRegularization {
+  id            String               @id @default(uuid()) @db.Uuid
+  userId        String               @db.Uuid
+  user          User                 @relation("AttendanceRegUser", fields: [userId], references: [id])
+  date          DateTime             @db.Date
+  reason        RegularizationReason
+  /// Free-text justification. Required when reason = OTHER; recommended otherwise.
+  notes         String
+  /// Optional — pin the day to a project (helps PM context + drives DA/P&L if claimed as billable).
+  projectId     String?              @db.Uuid
+  project       Project?             @relation(fields: [projectId], references: [id])
+  status        RegularizationStatus @default(SUBMITTED)
+  approverId    String?              @db.Uuid
+  approver      User?                @relation("AttendanceRegApprover", fields: [approverId], references: [id])
+  decidedAt     DateTime?
+  rejectReason  String?
+  day           AttendanceDay?       @relation("DayRegularization")
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+  deletedAt     DateTime?
+
+  @@index([userId, date])
+  @@index([status])
+}
+
+// ---------- Project Change Requests (Slice 2D) ----------
+
+/// Frozen at first project save. Baseline-vs-current drives "scope creep
+/// without P&L visibility" detection (pain point #2). Changes happen via
+/// approved ChangeRequest rows, never by directly editing the project.
+model ProjectBaseline {
+  id                String   @id @default(uuid()) @db.Uuid
+  projectId         String   @unique @db.Uuid
+  project           Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  contractValue     Decimal  @db.Decimal(18, 4)
+  contractCurrency  String   @db.Char(3)
+  budget            Decimal? @db.Decimal(18, 4)
+  budgetCurrency    String?  @db.Char(3)
+  plannedStart      DateTime @db.Date
+  plannedEnd        DateTime @db.Date
+  scopeSummary      String?
+  snapshotAt        DateTime @default(now())
+  /// Frozen milestone list at baseline time. JSON: [{name,value,currency,plannedDate}].
+  milestonesJson    Json     @default("[]")
+}
+
+enum ChangeRequestType {
+  SCOPE
+  TIME
+  COST
+  MIXED
+}
+
+enum ChangeRequestStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  WITHDRAWN
+}
+
+model ChangeRequest {
+  id                String              @id @default(uuid()) @db.Uuid
+  projectId         String              @db.Uuid
+  project           Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  /// Auto-numbered per project: CR-001, CR-002, … (assigned on first save).
+  code              String
+  title             String
+  type              ChangeRequestType
+  reason            String
+  /// Numeric deltas to the project — applied on approval, stored as signed values.
+  /// Either or both of cost and time may be present; UI shows whichever is non-null.
+  contractValueDelta Decimal?           @db.Decimal(18, 4)
+  budgetDelta        Decimal?           @db.Decimal(18, 4)
+  /// Days added to plannedEnd (positive = slip, negative = pull-in).
+  daysDelta          Int?
+  /// Optional scope-text delta — what's being added/removed.
+  scopeDelta         String?
+  status             ChangeRequestStatus @default(DRAFT)
+  createdById        String              @db.Uuid
+  createdBy          User                @relation("ChangeRequestCreator", fields: [createdById], references: [id])
+  approverId         String?             @db.Uuid
+  approver           User?               @relation("ChangeRequestApprover", fields: [approverId], references: [id])
+  submittedAt        DateTime?
+  decidedAt          DateTime?
+  rejectReason       String?
+  /// Snapshot of the project's contract/budget/plannedEnd at the moment of
+  /// approval — so the "current" view can be reconstructed even if more CRs
+  /// come in after this one.
+  appliedSnapshot    Json?
+  comments           Comment[]
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+  deletedAt          DateTime?
+
+  @@unique([projectId, code])
+  @@index([projectId, status])
+}
+
+// ---------- Polymorphic comments (Slice 2E) ----------
+
+/// Threaded comments attachable to any entity. `entityKind` is a string label
+/// (PROJECT, TASK, EXPENSE, TRIP, CHANGE_REQUEST, …) rather than a hard FK
+/// because the trade-off favors flexibility for v1. Soft-delete preserves
+/// thread structure when a parent comment is removed.
+model Comment {
+  id              String         @id @default(uuid()) @db.Uuid
+  entityKind      String
+  entityId        String         @db.Uuid
+  authorId        String         @db.Uuid
+  author          User           @relation("CommentAuthor", fields: [authorId], references: [id])
+  body            String
+  parentId        String?        @db.Uuid
+  parent          Comment?       @relation("CommentTree", fields: [parentId], references: [id])
+  replies         Comment[]      @relation("CommentTree")
+  /// If this comment lives on a ChangeRequest, set the FK so cascade delete
+  /// of the CR cleans up its thread. Other entity kinds use entityKind+entityId only.
+  changeRequestId String?        @db.Uuid
+  changeRequest   ChangeRequest? @relation(fields: [changeRequestId], references: [id], onDelete: Cascade)
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+  deletedAt       DateTime?
+
+  @@index([entityKind, entityId, createdAt])
+}
+
+// ---------- Anomaly detection (Slice 2E) ----------
+
+enum AnomalyKind {
+  RECEIPT_DUPLICATE
+  RECEIPT_AMOUNT_MISMATCH
+  RECEIPT_DATE_OUT_OF_TRIP
+  RECEIPT_GPS_FAR
+  ALLOCATION_OVERBOOK
+  PROJECT_OVER_BUDGET
+  PROJECT_MARGIN_RED
+  EXPENSE_OVER_CAP
+  ATTENDANCE_NO_PUNCH
+  ATTENDANCE_REGULARIZATION_STALE
+}
+
+enum AnomalySeverity {
+  INFO
+  WARN
+  CRITICAL
+}
+
+/// Admin-tunable rules. The detector runs them on demand (anomalies endpoint)
+/// + idempotently writes Anomaly rows. Disabling a rule short-circuits the
+/// detector without losing history.
+model AnomalyRule {
+  id          String          @id @default(uuid()) @db.Uuid
+  kind        AnomalyKind     @unique
+  name        String
+  description String
+  severity    AnomalySeverity
+  /// JSON config — shape depends on `kind`. e.g. for PROJECT_MARGIN_RED:
+  /// `{ "marginPercentBelow": 10 }`. Surfaced to admins so the threshold is
+  /// editable from /admin/anomaly-rules.
+  config      Json            @default("{}")
+  enabled     Boolean         @default(true)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+}
+
+/// One row per detection. Surfaces in the leadership dashboard's anomalies
+/// feed. `resolvedAt`/`resolvedById` flips when an admin/leader acknowledges
+/// the finding — closed anomalies stay in the audit trail.
+model Anomaly {
+  id            String          @id @default(uuid()) @db.Uuid
+  kind          AnomalyKind
+  severity      AnomalySeverity
+  /// Polymorphic pointer to the offending row (EXPENSE/PROJECT/USER/RECEIPT/…).
+  entityKind    String
+  entityId      String          @db.Uuid
+  /// Stable de-dupe key so the detector can run repeatedly without spam.
+  /// Format suggestion: "<kind>:<entityId>[:<bucket>]".
+  fingerprint   String          @unique
+  detail        String?
+  /// Cached extra info for the dashboard (e.g. user + project names + amount)
+  /// so the UI doesn't have to refetch joins per row.
+  context       Json?
+  detectedAt    DateTime        @default(now())
+  resolvedAt    DateTime?
+  resolvedById  String?         @db.Uuid
+  resolutionNote String?
+
+  @@index([kind, severity, detectedAt])
+  @@index([entityKind, entityId])
 }
 
 // ---------- Audit log (soft-delete + history) ----------

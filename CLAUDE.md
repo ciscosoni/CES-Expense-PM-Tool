@@ -281,7 +281,10 @@ For every uploaded receipt, derive at upload time:
 - **Phase 2 — in progress:**
   - **2A ✓** — Linear-style dark UI redesign (semantic tokens, command palette, sparklines, AI affordances).
   - **2B ✓** — `PROJECT_OWNER` role + per-project `ownerId`/`budget` + 2-step expense approval (Owner → Finance, with `OWNER_APPROVED` intermediate state).
-  - **2C+ (not started)** — Geofenced Attendance regularization, Project CRs (baseline vs current), Anomaly detection rules, Allocation conflict detector, Polymorphic Comments, in-product Ask-AI (Cmd+K AI mode placeholder reserved).
+  - **2C ✓** — Geofenced Attendance regularization. `AttendanceEvent` ingest → derived `AttendanceDay` summary → engineer-submitted `AttendanceRegularization` with required justification; manager queue at `/attendance/inbox` flips a day's status to `REGULARIZED` on approval.
+  - **2D ✓** — Project Change Requests with `ProjectBaseline` snapshot + scope/time/cost deltas. Owner-only approval applies deltas to the project and records `appliedSnapshot`; P&L page shows baseline-vs-current.
+  - **2E ✓** — Polymorphic `Comment` model (PROJECT/TASK/EXPENSE/TRIP/CHANGE_REQUEST/RECEIPT/ATTENDANCE_REGULARIZATION) + `AnomalyRule` admin surface + `Anomaly` detector (`POST /anomalies/detect`); 7 default rules seeded. Open anomalies surface on the leadership dashboard.
+  - **Remaining 2x** — Allocation conflict detector UI, in-product Ask-AI (Cmd+K AI mode placeholder reserved).
 - **Phase 3:** Tally / SAP / payroll integrations, Teams / Outlook notifications via Graph, Reporting/BI exports.
 
 When picking up work mid-build, check `git log` + open tasks to see where Phase X stands.

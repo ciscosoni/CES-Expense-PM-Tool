@@ -559,6 +559,338 @@ async function main() {
   }
   console.info(`  ${projectSeeds.length} projects with milestones, tasks, time logs, allocations`);
 
+  // ---- Phase 2C: sample attendance events + derived days + 1 open regularize ----
+  await prisma.attendanceDay.deleteMany({});
+  await prisma.attendanceEvent.deleteMany({});
+  await prisma.attendanceRegularization.deleteMany({});
+
+  // Pick the first project + first site for engineers' check-ins.
+  const sbiProject = await prisma.project.findFirstOrThrow({ where: { code: 'SBI-ACI-001' } });
+  // Ensure SBI has a Mumbai site + geofence so attendance has a target.
+  const mumbaiCity = await prisma.city.findFirstOrThrow({
+    where: { name: 'Mumbai', country: 'IN' },
+  });
+  const sbiSite = await prisma.projectSite.upsert({
+    where: { id: '00000000-0000-0000-0000-000000005bb1' },
+    update: { siteName: 'SBI Mumbai DC', address: 'Belapur, Navi Mumbai' },
+    create: {
+      id: '00000000-0000-0000-0000-000000005bb1',
+      projectId: sbiProject.id,
+      siteName: 'SBI Mumbai DC',
+      cityId: mumbaiCity.id,
+      address: 'Belapur, Navi Mumbai',
+    },
+  });
+  await prisma.geofence.deleteMany({ where: { projectSiteId: sbiSite.id } });
+  await prisma.geofence.create({
+    data: {
+      projectSiteId: sbiSite.id,
+      centerLat: '19.018600',
+      centerLng: '73.029700',
+      radiusMeters: 200,
+    },
+  });
+
+  // Synthesize the last 5 weekdays of events for engineer #1.
+  const today = new Date();
+  today.setUTCHours(0, 0, 0, 0);
+  const dayMs = 24 * 60 * 60 * 1000;
+  for (let back = 1; back <= 7; back++) {
+    const d = new Date(today.getTime() - back * dayMs);
+    const wd = d.getUTCDay();
+    if (wd === 0 || wd === 6) continue; // skip weekends
+    // engineer #1: full on-site day with geofence pair
+    const enter = new Date(d.getTime() + 9.5 * 3600 * 1000);
+    const exit = new Date(d.getTime() + 18 * 3600 * 1000);
+    await prisma.attendanceEvent.createMany({
+      data: [
+        {
+          userId: eng1.id,
+          kind: 'CHECK_IN',
+          occurredAt: enter,
+          lat: '19.018700',
+          lng: '73.029500',
+          accuracyMeters: 8,
+          projectSiteId: sbiSite.id,
+          source: 'MOBILE',
+        },
+        {
+          userId: eng1.id,
+          kind: 'GEOFENCE_ENTER',
+          occurredAt: enter,
+          projectSiteId: sbiSite.id,
+          source: 'SYSTEM',
+        },
+        {
+          userId: eng1.id,
+          kind: 'GEOFENCE_EXIT',
+          occurredAt: exit,
+          projectSiteId: sbiSite.id,
+          source: 'SYSTEM',
+        },
+        {
+          userId: eng1.id,
+          kind: 'CHECK_OUT',
+          occurredAt: exit,
+          lat: '19.018800',
+          lng: '73.029400',
+          accuracyMeters: 10,
+          projectSiteId: sbiSite.id,
+          source: 'MOBILE',
+        },
+      ],
+    });
+  }
+  // engineer #2: today is a REMOTE day (only check-in, no geofence proximity).
+  const ydayMid = new Date(today.getTime() - dayMs + 10 * 3600 * 1000);
+  const ydayEnd = new Date(today.getTime() - dayMs + 17 * 3600 * 1000);
+  await prisma.attendanceEvent.createMany({
+    data: [
+      {
+        userId: eng2.id,
+        kind: 'CHECK_IN',
+        occurredAt: ydayMid,
+        lat: '28.535000',
+        lng: '77.391000',
+        accuracyMeters: 25,
+        source: 'MOBILE',
+      },
+      {
+        userId: eng2.id,
+        kind: 'CHECK_OUT',
+        occurredAt: ydayEnd,
+        lat: '28.535100',
+        lng: '77.391100',
+        accuracyMeters: 25,
+        source: 'MOBILE',
+      },
+    ],
+  });
+
+  // Recompute day rows for both engineers across the last 8 days.
+  // We mirror the service's derivation by going through the same code path
+  // — calling prisma directly here keeps the seed dependency-free, so we
+  // hand-derive a minimal day row instead.
+  async function recomputeForRange(userId: string, days: number) {
+    for (let back = 0; back <= days; back++) {
+      const d = new Date(today.getTime() - back * dayMs);
+      const next = new Date(d.getTime() + dayMs);
+      const events = await prisma.attendanceEvent.findMany({
+        where: { userId, occurredAt: { gte: d, lt: next } },
+        orderBy: { occurredAt: 'asc' },
+      });
+      if (events.length === 0) continue;
+      let onSiteMinutes = 0;
+      let open: Date | null = null;
+      const siteIds = new Set<string>();
+      let first = events[0]!.occurredAt;
+      let last = events[events.length - 1]!.occurredAt;
+      let hasIn = false;
+      let hasOut = false;
+      for (const e of events) {
+        if (e.projectSiteId) siteIds.add(e.projectSiteId);
+        if (e.kind === 'CHECK_IN') hasIn = true;
+        if (e.kind === 'CHECK_OUT') hasOut = true;
+        if (e.kind === 'GEOFENCE_ENTER') open = e.occurredAt;
+        else if (e.kind === 'GEOFENCE_EXIT' && open) {
+          onSiteMinutes += Math.round((e.occurredAt.getTime() - open.getTime()) / 60000);
+          open = null;
+        }
+      }
+      let status: 'ON_SITE' | 'PARTIAL' | 'REMOTE' = 'REMOTE';
+      let note = 'REMOTE: events recorded but no geofence proximity.';
+      if (onSiteMinutes >= 240) {
+        status = 'ON_SITE';
+        note = `ON_SITE: ${Math.floor(onSiteMinutes / 60)}h ${onSiteMinutes % 60}m inside ${siteIds.size} project site${siteIds.size === 1 ? '' : 's'}.`;
+      } else if (hasIn && !hasOut) {
+        status = 'PARTIAL';
+        note = `PARTIAL: check-in at ${first.toISOString()} but no check-out by end of day.`;
+      }
+      await prisma.attendanceDay.upsert({
+        where: { userId_date: { userId, date: d } },
+        create: {
+          userId,
+          date: d,
+          firstEventAt: first,
+          lastEventAt: last,
+          onSiteMinutes,
+          projectSiteIds: Array.from(siteIds),
+          status,
+          eventCount: events.length,
+          derivationNote: note,
+        },
+        update: {
+          firstEventAt: first,
+          lastEventAt: last,
+          onSiteMinutes,
+          projectSiteIds: Array.from(siteIds),
+          status,
+          eventCount: events.length,
+          derivationNote: note,
+        },
+      });
+    }
+  }
+  await recomputeForRange(eng1.id, 8);
+  await recomputeForRange(eng2.id, 2);
+
+  // One open regularize from eng2 for the day they were marked REMOTE — claims
+  // it was actually a customer-site visit not covered by a geofence.
+  const remoteDay = new Date(today.getTime() - dayMs);
+  await prisma.attendanceRegularization.create({
+    data: {
+      userId: eng2.id,
+      date: remoteDay,
+      reason: 'SITE_VISIT_NOT_GEOFENCED',
+      notes: 'On-site at AAI Mumbai office (T2). No geofence configured for this customer site yet.',
+      projectId: sbiProject.id,
+      status: 'SUBMITTED',
+    },
+  });
+  console.info('  Attendance: 5 days of on-site events for eng1, 1 remote day + open regularize for eng2');
+
+  // ---- Phase 2D: Project baselines + 1 sample CR ----
+  await prisma.changeRequest.deleteMany({});
+  await prisma.projectBaseline.deleteMany({});
+  const allProjects = await prisma.project.findMany({
+    where: { deletedAt: null },
+    include: { milestones: true },
+  });
+  for (const p of allProjects) {
+    await prisma.projectBaseline.create({
+      data: {
+        projectId: p.id,
+        contractValue: p.contractValue,
+        contractCurrency: p.contractCurrency,
+        budget: p.budget,
+        budgetCurrency: p.budgetCurrency,
+        plannedStart: p.plannedStart,
+        plannedEnd: p.plannedEnd,
+        scopeSummary: `Baseline for ${p.code} at project creation.`,
+        milestonesJson: p.milestones.map((m) => ({
+          name: m.name,
+          value: m.value.toString(),
+          currency: m.currency,
+          plannedDate: m.plannedDate.toISOString().slice(0, 10),
+        })),
+      },
+    });
+  }
+  // Sample SUBMITTED CR on the SBI project — Owner gets to decide.
+  await prisma.changeRequest.create({
+    data: {
+      projectId: sbiProject.id,
+      code: 'CR-001',
+      title: 'Scope add: HA pair upgrade for Mumbai DC',
+      type: 'MIXED',
+      reason: 'Client asked for HA pair (was single device in original SOW).',
+      contractValueDelta: '450000',
+      budgetDelta: '60000',
+      daysDelta: 21,
+      scopeDelta: 'Add HA pair for Mumbai DC spine, additional config + cutover window.',
+      status: 'SUBMITTED',
+      createdById: pm.id,
+      submittedAt: new Date(),
+    },
+  });
+  console.info('  Change requests: baselines for all projects + 1 SUBMITTED CR on SBI');
+
+  // ---- Phase 2E: Anomaly rules + sample comments ----
+  await prisma.anomaly.deleteMany({});
+  await prisma.anomalyRule.deleteMany({});
+  const ruleSeeds: Array<{
+    kind:
+      | 'RECEIPT_DUPLICATE'
+      | 'RECEIPT_AMOUNT_MISMATCH'
+      | 'ALLOCATION_OVERBOOK'
+      | 'PROJECT_OVER_BUDGET'
+      | 'PROJECT_MARGIN_RED'
+      | 'ATTENDANCE_NO_PUNCH'
+      | 'ATTENDANCE_REGULARIZATION_STALE';
+    name: string;
+    description: string;
+    severity: 'INFO' | 'WARN' | 'CRITICAL';
+    config: Record<string, unknown>;
+  }> = [
+    {
+      kind: 'RECEIPT_DUPLICATE',
+      name: 'Duplicate receipt content',
+      description: 'Two receipts share the same SHA-256 or perceptual hash.',
+      severity: 'CRITICAL',
+      config: {},
+    },
+    {
+      kind: 'RECEIPT_AMOUNT_MISMATCH',
+      name: 'Claimed amount > OCR amount',
+      description: 'The entered expense amount exceeds the OCR-detected receipt amount.',
+      severity: 'WARN',
+      config: { tolerancePercent: 5 },
+    },
+    {
+      kind: 'ALLOCATION_OVERBOOK',
+      name: 'Engineer allocated > 100%',
+      description: 'Sum of active allocations for an engineer this month exceeds 100%.',
+      severity: 'WARN',
+      config: {},
+    },
+    {
+      kind: 'PROJECT_OVER_BUDGET',
+      name: 'Project cost exceeds budget',
+      description: 'Live P&L cost is over the Owner-set project budget.',
+      severity: 'CRITICAL',
+      config: {},
+    },
+    {
+      kind: 'PROJECT_MARGIN_RED',
+      name: 'Project margin in the red zone',
+      description: 'Computed margin % is below the configured threshold.',
+      severity: 'WARN',
+      config: { marginPercentBelow: 10 },
+    },
+    {
+      kind: 'ATTENDANCE_NO_PUNCH',
+      name: 'No attendance punch on a workday',
+      description: 'No attendance events on a weekday for an active engineer.',
+      severity: 'INFO',
+      config: {},
+    },
+    {
+      kind: 'ATTENDANCE_REGULARIZATION_STALE',
+      name: 'Regularization stuck > 3 days',
+      description: 'A submitted regularization has been waiting more than 3 days for a decision.',
+      severity: 'WARN',
+      config: { thresholdDays: 3 },
+    },
+  ];
+  for (const r of ruleSeeds) {
+    await prisma.anomalyRule.create({ data: r });
+  }
+  console.info(`  ${ruleSeeds.length} anomaly rules`);
+
+  // Sample comments on the open CR + on the SBI project.
+  await prisma.comment.deleteMany({});
+  const cr = await prisma.changeRequest.findFirstOrThrow({
+    where: { projectId: sbiProject.id, code: 'CR-001' },
+  });
+  await prisma.comment.create({
+    data: {
+      entityKind: 'CHANGE_REQUEST',
+      entityId: cr.id,
+      changeRequestId: cr.id,
+      authorId: pm.id,
+      body: 'Submitting for Owner decision — customer mail dated 2026-05-20.',
+    },
+  });
+  await prisma.comment.create({
+    data: {
+      entityKind: 'PROJECT',
+      entityId: sbiProject.id,
+      authorId: owner.id,
+      body: 'Cutover window is tight in August — confirm bandwidth.',
+    },
+  });
+  console.info('  Comments: 1 on CR-001, 1 on SBI project');
+
   console.info('Seed complete.');
 }
 

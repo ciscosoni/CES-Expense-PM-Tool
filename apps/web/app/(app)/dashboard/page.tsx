@@ -23,6 +23,7 @@ import {
 } from '@/components/ui/table';
 import { serverFetch } from '@/lib/server-api';
 import { formatMoney, projectStatusColor } from '@/lib/format';
+import type { Anomaly } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
 
@@ -96,11 +97,12 @@ function trendLine(value: number, steps = 10, jitter = 0.08): number[] {
 }
 
 export default async function DashboardPage() {
-  const [kpis, portfolio, utilization, anomalies] = await Promise.all([
+  const [kpis, portfolio, utilization, anomalies, openAnomalies] = await Promise.all([
     serverFetch<Kpis>('/dashboards/kpis'),
     serverFetch<PortfolioRow[]>('/dashboards/portfolio'),
     serverFetch<UtilizationRow[]>('/dashboards/utilization'),
     serverFetch<Anomalies>('/dashboards/anomalies'),
+    serverFetch<Anomaly[]>('/anomalies').catch(() => [] as Anomaly[]),
   ]);
 
   const MarginIcon =
@@ -340,6 +342,64 @@ export default async function DashboardPage() {
           </Card>
         </section>
       </div>
+
+      <section className="mt-8">
+        <header className="mb-3 flex items-center justify-between">
+          <h2 className="text-sm font-semibold tracking-tight">Open anomalies</h2>
+          <span className="text-[11px] text-muted-foreground">
+            From{' '}
+            <code className="rounded bg-secondary px-1 py-0.5 font-mono">/anomalies/detect</code> ·{' '}
+            <Link href="/admin/anomaly-rules" className="hover:underline">
+              tune rules
+            </Link>
+          </span>
+        </header>
+        <Card className="overflow-hidden p-0">
+          {openAnomalies.length === 0 ? (
+            <p className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
+              <ShieldCheck className="h-4 w-4 text-emerald-400" /> No open anomalies. Run the
+              detector from the rules page to scan again.
+            </p>
+          ) : (
+            <ul className="divide-y divide-border/60">
+              {openAnomalies.slice(0, 8).map((a) => {
+                const sevClass =
+                  a.severity === 'CRITICAL'
+                    ? 'border-red-500/30 bg-red-500/10 text-red-300'
+                    : a.severity === 'WARN'
+                      ? 'border-amber-500/30 bg-amber-500/10 text-amber-300'
+                      : 'border-blue-500/30 bg-blue-500/10 text-blue-300';
+                return (
+                  <li key={a.id} className="p-3 text-xs">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle
+                        className={
+                          a.severity === 'CRITICAL'
+                            ? 'mt-0.5 h-3.5 w-3.5 text-red-400'
+                            : a.severity === 'WARN'
+                              ? 'mt-0.5 h-3.5 w-3.5 text-amber-400'
+                              : 'mt-0.5 h-3.5 w-3.5 text-blue-400'
+                        }
+                      />
+                      <div className="min-w-0 flex-1">
+                        <p>
+                          <Badge className={`mr-1 border text-[9px] ${sevClass}`}>
+                            {a.severity}
+                          </Badge>
+                          <span className="font-semibold">{a.kind.replace(/_/g, ' ')}</span>
+                        </p>
+                        {a.detail && (
+                          <p className="mt-0.5 text-muted-foreground">{a.detail}</p>
+                        )}
+                      </div>
+                    </div>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </Card>
+      </section>
 
       <Card tone="ai" className="mt-8">
         <CardHeader className="flex-row items-start justify-between gap-4">

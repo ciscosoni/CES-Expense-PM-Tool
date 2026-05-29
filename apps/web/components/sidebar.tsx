@@ -3,7 +3,9 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
+  AlertTriangle,
   Building2,
+  CalendarCheck,
   ClipboardList,
   CreditCard,
   FileBarChart,
@@ -55,6 +57,18 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
         label: 'My tasks',
         icon: ClipboardList,
         roles: ['ENGINEER', 'PROJECT_MANAGER', 'ADMIN'],
+      },
+      {
+        href: '/attendance',
+        label: 'Attendance',
+        icon: CalendarCheck,
+        roles: ['ENGINEER', 'PROJECT_MANAGER', 'PROJECT_OWNER', 'ADMIN'],
+      },
+      {
+        href: '/attendance/inbox',
+        label: 'Regularization queue',
+        icon: ShieldCheck,
+        roles: ['PROJECT_MANAGER', 'PROJECT_OWNER', 'ADMIN'],
       },
       {
         href: '/travel',
@@ -128,6 +142,12 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
       { href: '/admin/clients', label: 'Clients (SI/OEM)', icon: Building2, roles: ['ADMIN'] },
       { href: '/admin/end-customers', label: 'End customers', icon: Building2, roles: ['ADMIN'] },
       { href: '/admin/users', label: 'Users', icon: Users, roles: ['ADMIN'] },
+      {
+        href: '/admin/anomaly-rules',
+        label: 'Anomaly rules',
+        icon: AlertTriangle,
+        roles: ['ADMIN'],
+      },
     ],
   },
 ];
