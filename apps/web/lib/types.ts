@@ -581,3 +581,72 @@ export interface Anomaly {
   resolvedById: string | null;
   resolutionNote: string | null;
 }
+
+// ---- AI Onboarding (Phase 2F) ----
+
+export interface OnboardingMilestone {
+  name: string;
+  value: string;
+  plannedDate: string;
+  rationale?: string;
+}
+
+export interface OnboardingTask {
+  name: string;
+  description?: string;
+  estimatedHours: number;
+  phase?: string;
+  suggestedGradeCode?: 'L1' | 'L2' | 'L3' | 'L4' | 'L5';
+}
+
+export interface OnboardingTeamSuggestion {
+  userEmail: string;
+  role: string;
+  percentAllocation: number;
+  rationale?: string;
+}
+
+export interface OnboardingPlan {
+  projectName: string;
+  suggestedCode: string;
+  clientName: string;
+  endCustomerName: string | null;
+  whiteLabel: boolean;
+  category: ProjectCategory;
+  billingModel: BillingModel;
+  contractValue: string;
+  currency: string;
+  plannedStart: string;
+  plannedEnd: string;
+  budget: string;
+  scopeSummary: string;
+  milestones: OnboardingMilestone[];
+  tasks: OnboardingTask[];
+  teamSuggestions: OnboardingTeamSuggestion[];
+  marginForecast: {
+    revenue: string;
+    cost: string;
+    grossProfit: string;
+    marginPercent: number;
+  };
+  risks: {
+    summary?: string;
+    optimizationOpportunities: string[];
+  };
+}
+
+export interface OnboardingGenerateResponse {
+  plan: OnboardingPlan;
+  source: 'claude' | 'mock';
+  promptTokens?: number;
+  completionTokens?: number;
+}
+
+export interface OnboardingCommitResponse {
+  id: string;
+  code: string;
+  name: string;
+  taskCount: number;
+  milestoneCount: number;
+  teamSize: number;
+}

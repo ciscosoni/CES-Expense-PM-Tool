@@ -17,6 +17,7 @@ import {
   Receipt,
   Settings2,
   ShieldCheck,
+  Sparkles,
   Users,
   Wallet,
   type LucideIcon,
@@ -51,6 +52,12 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
         label: 'Projects',
         icon: FolderKanban,
         roles: ['ADMIN', 'PROJECT_MANAGER', 'PROJECT_OWNER', 'ENGINEER'],
+      },
+      {
+        href: '/projects/onboard',
+        label: 'Onboard with AI',
+        icon: Sparkles,
+        roles: ['ADMIN', 'PROJECT_OWNER', 'PROJECT_MANAGER'],
       },
       {
         href: '/tasks',

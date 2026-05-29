@@ -284,7 +284,8 @@ For every uploaded receipt, derive at upload time:
   - **2C ✓** — Geofenced Attendance regularization. `AttendanceEvent` ingest → derived `AttendanceDay` summary → engineer-submitted `AttendanceRegularization` with required justification; manager queue at `/attendance/inbox` flips a day's status to `REGULARIZED` on approval.
   - **2D ✓** — Project Change Requests with `ProjectBaseline` snapshot + scope/time/cost deltas. Owner-only approval applies deltas to the project and records `appliedSnapshot`; P&L page shows baseline-vs-current.
   - **2E ✓** — Polymorphic `Comment` model (PROJECT/TASK/EXPENSE/TRIP/CHANGE_REQUEST/RECEIPT/ATTENDANCE_REGULARIZATION) + `AnomalyRule` admin surface + `Anomaly` detector (`POST /anomalies/detect`); 7 default rules seeded. Open anomalies surface on the leadership dashboard.
-  - **Remaining 2x** — Allocation conflict detector UI, in-product Ask-AI (Cmd+K AI mode placeholder reserved).
+  - **2F ✓** — AI Project Onboarding Wizard at `/projects/onboard`. Owner pastes an RFP/email/SOW → `POST /ai/project-onboard/generate` calls Claude (`claude-opus-4-7`, adaptive thinking + `output_config.format` JSON schema) using a system prompt seeded with live client/end-customer/people-directory + current-month utilization. Returns a structured plan (project, milestones, tasks with grade hints, team suggestions, budget, P&L forecast, optimization ideas). Owner edits inline; `POST /ai/project-onboard/commit` materializes project + milestones + tasks + allocations + baseline in one transaction. Falls back to a deterministic mock when `ANTHROPIC_API_KEY` is unset.
+  - **Remaining 2x** — Streaming token-by-token in the wizard, in-product Ask-AI (per-record), email/WhatsApp/meeting-note ingestion → daily AI brief.
 - **Phase 3:** Tally / SAP / payroll integrations, Teams / Outlook notifications via Graph, Reporting/BI exports.
 
 When picking up work mid-build, check `git log` + open tasks to see where Phase X stands.

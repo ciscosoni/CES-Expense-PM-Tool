@@ -81,7 +81,17 @@ export default function ProjectsPage() {
     <AdminShell
       title="Projects"
       description="Active and historical engagements. Click a row to open the project workspace."
-      actions={<CreateProjectDialog />}
+      actions={
+        <div className="flex items-center gap-2">
+          <Link
+            href="/projects/onboard"
+            className="inline-flex h-9 items-center gap-1.5 rounded-md bg-gradient-to-r from-[hsl(var(--ai-from))] via-[hsl(var(--ai-via))] to-[hsl(var(--ai-to))] px-3 text-sm font-medium text-white shadow-lg transition hover:opacity-90"
+          >
+            <span className="text-base leading-none">✨</span> Onboard with AI
+          </Link>
+          <CreateProjectDialog />
+        </div>
+      }
     >
       <div className="rounded-md border bg-card">
         <Table>

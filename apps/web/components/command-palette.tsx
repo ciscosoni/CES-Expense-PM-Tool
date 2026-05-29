@@ -15,8 +15,33 @@ interface PaletteItem {
 }
 
 const ITEMS: PaletteItem[] = [
+  {
+    id: 'ai-onboard',
+    label: 'AI: Onboard new project from RFP/email/SOW',
+    href: '/projects/onboard',
+    group: 'AI',
+    hint: 'Claude drafts the plan',
+  },
   { id: 'dashboard', label: 'Live Ops dashboard', href: '/dashboard', group: 'Navigate' },
   { id: 'projects', label: 'Projects', href: '/projects', group: 'Navigate' },
+  {
+    id: 'attendance',
+    label: 'Attendance',
+    href: '/attendance',
+    group: 'Navigate',
+  },
+  {
+    id: 'attendance-inbox',
+    label: 'Attendance regularization queue',
+    href: '/attendance/inbox',
+    group: 'Navigate',
+  },
+  {
+    id: 'anomaly-rules',
+    label: 'Anomaly rules',
+    href: '/admin/anomaly-rules',
+    group: 'Admin',
+  },
   { id: 'tasks', label: 'My tasks', href: '/tasks', group: 'Navigate' },
   { id: 'travel', label: 'Travel', href: '/travel', group: 'Navigate' },
   { id: 'travel-inbox', label: 'Travel approvals inbox', href: '/travel/inbox', group: 'Navigate' },
@@ -144,7 +169,7 @@ export function CommandPalette() {
             <div className="mt-2 border-t border-border/60 px-3 pb-2 pt-3 text-[11px] text-muted-foreground">
               <span className="inline-flex items-center gap-1.5">
                 <Sparkles className="h-3 w-3 text-[hsl(var(--ai-via))]" />
-                Ask-AI mode lands when the Anthropic key is wired (Slice 2C).
+                AI flows live now — onboarding a project from raw text takes &lt;30s.
               </span>
             </div>
           </div>

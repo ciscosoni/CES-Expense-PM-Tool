@@ -405,18 +405,26 @@ export default async function DashboardPage() {
         <CardHeader className="flex-row items-start justify-between gap-4">
           <div>
             <CardDescription className="flex items-center gap-1.5">
-              <Sparkles className="h-3 w-3" /> AI · coming soon
+              <Sparkles className="h-3 w-3" /> AI · Live
             </CardDescription>
             <CardTitle className="text-lg">
-              Project onboarding from RFP / email chain / scope docs
+              Onboard a new project from an RFP, email thread, or SOW
             </CardTitle>
           </div>
-          <AiBadge label="Slice 2C" />
+          <AiBadge label="Claude" />
         </CardHeader>
-        <CardContent className="text-sm text-muted-foreground">
-          Drop in a Project Owner&apos;s RFP, email thread, and statement of work. Claude generates
-          the project charter, work breakdown, milestones, and team-role suggestions — Owner reviews
-          and one-click commits.
+        <CardContent className="flex flex-wrap items-center justify-between gap-4 text-sm text-muted-foreground">
+          <p className="max-w-xl">
+            Paste the deal artifact and Claude drafts the project — milestones, tasks, team
+            allocation (utilization-aware), budget, and a P&amp;L forecast. Owner reviews and
+            one-click commits.
+          </p>
+          <Link
+            href="/projects/onboard"
+            className="inline-flex h-9 items-center gap-1.5 rounded-md bg-gradient-to-r from-[hsl(var(--ai-from))] via-[hsl(var(--ai-via))] to-[hsl(var(--ai-to))] px-4 text-sm font-medium text-white shadow-lg transition hover:opacity-90"
+          >
+            <Sparkles className="h-3.5 w-3.5" /> Try AI onboarding
+          </Link>
         </CardContent>
       </Card>
     </AdminShell>

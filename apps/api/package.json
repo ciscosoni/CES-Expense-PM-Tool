@@ -21,6 +21,7 @@
     "clean": "rm -rf dist .turbo *.tsbuildinfo"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.100.1",
     "@ces/approval-engine": "workspace:*",
     "@ces/config": "workspace:*",
     "@ces/da-engine": "workspace:*",

@@ -25,6 +25,7 @@ import { AttendanceModule } from './attendance/attendance.module.js';
 import { ChangeRequestsModule } from './change-requests/change-requests.module.js';
 import { CommentsModule } from './comments/comments.module.js';
 import { AnomaliesModule } from './anomalies/anomalies.module.js';
+import { AiModule } from './ai/ai.module.js';
 
 @Module({
   imports: [
@@ -56,6 +57,8 @@ import { AnomaliesModule } from './anomalies/anomalies.module.js';
     ChangeRequestsModule,
     CommentsModule,
     AnomaliesModule,
+    // Phase 2F — AI flows (project onboarding wizard, Ask-AI surface later)
+    AiModule,
   ],
   controllers: [HealthController],
 })

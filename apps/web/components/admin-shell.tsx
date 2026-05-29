@@ -1,3 +1,4 @@
+import * as React from 'react';
 import { PageHeader } from './page-header';
 
 export function AdminShell({
@@ -6,7 +7,7 @@ export function AdminShell({
   actions,
   children,
 }: {
-  title: string;
+  title: React.ReactNode;
   description?: React.ReactNode;
   actions?: React.ReactNode;
   children: React.ReactNode;
