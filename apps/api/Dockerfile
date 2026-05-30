@@ -16,6 +16,7 @@ ARG ALPINE_VERSION=3.20
 # =====================================================================
 FROM node:${NODE_VERSION}-alpine${ALPINE_VERSION} AS base
 RUN apk add --no-cache libc6-compat openssl tini && \
+    npm install -g corepack@latest && \
     corepack enable && corepack prepare pnpm@${PNPM_VERSION} --activate
 WORKDIR /repo
 ENV PNPM_HOME=/pnpm-store
