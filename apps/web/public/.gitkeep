@@ -1,0 +1,2 @@
+# Keeps apps/web/public present so the production Dockerfile's
+# `COPY apps/web/public` step succeeds even when there are no static assets.
