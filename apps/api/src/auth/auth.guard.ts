@@ -10,6 +10,7 @@ import { Reflector } from '@nestjs/core';
 import type { Request } from 'express';
 import { PrismaService } from '../prisma.service.js';
 import type { AuthedUser } from './auth.types.js';
+import { createEntraVerifier, resolveAuthMode, type EntraVerifier } from './entra.js';
 
 export const IS_PUBLIC_KEY = 'isPublic';
 /**
@@ -21,18 +22,21 @@ export const Public = () => SetMetadata(IS_PUBLIC_KEY, true);
 /**
  * Authenticates the request and attaches `request.user`.
  *
- * Dev mode (NODE_ENV !== 'production'): trusts the `X-Dev-User-Email` header.
- *   - Default falls back to `DEV_AUTH_DEFAULT_EMAIL` env var, then `admin@cestech.in`.
- *   - This is the seam where real MSAL JWT validation slots in for production —
- *     the AuthedUser contract on `request.user` stays the same so guards/controllers
- *     don't need to change.
+ * Two modes, resolved by {@link resolveAuthMode}:
+ * - **dev** (local default): trusts the `X-Dev-User-Email` header, falling back
+ *   to `DEV_AUTH_DEFAULT_EMAIL` then `admin@cestech.in`.
+ * - **entra** (prod with a real tenant, or `AUTH_MODE=entra`): validates a
+ *   Microsoft Entra ID bearer JWT and maps `oid → User` (linking an existing
+ *   seeded user by email on first login). The `AuthedUser` contract is identical
+ *   in both modes, so guards/controllers never change.
  *
- * Prod mode: not implemented yet — throws 401. MSAL JWT validation lands in a
- * dedicated commit before any production deploy.
+ * `ALLOW_DEV_AUTH_IN_PROD=true` keeps the dev-header path usable behind an IP
+ * allowlist during the cutover window — never on a public URL.
  */
 @Injectable()
 export class AuthGuard implements CanActivate {
   private readonly logger = new Logger(AuthGuard.name);
+  private verifier: EntraVerifier | null = null;
 
   constructor(
     private readonly reflector: Reflector,
@@ -47,22 +51,82 @@ export class AuthGuard implements CanActivate {
     if (isPublic) return true;
 
     const req = ctx.switchToHttp().getRequest<Request & { user?: AuthedUser }>();
-    const isProd = process.env.NODE_ENV === 'production';
-    const allowDevAuthInProd = process.env.ALLOW_DEV_AUTH_IN_PROD === 'true';
+    const mode = resolveAuthMode(process.env);
 
-    if (isProd && !allowDevAuthInProd) {
-      // MSAL JWT validation via jwks-rsa lands in Batch 4. Until then, a prod
-      // deploy can opt into the dev-header path with ALLOW_DEV_AUTH_IN_PROD=true
-      // ONLY if the environment is locked behind an IP allowlist or VPN —
-      // never open this on a public URL.
-      this.logger.warn(
-        `Blocked unauthenticated request to ${req.method} ${req.url} — Entra ID auth not wired yet. Set ALLOW_DEV_AUTH_IN_PROD=true to fall back to the dev-header path (private networks only).`,
-      );
-      throw new UnauthorizedException(
-        'Production authentication is not yet configured. See DEPLOYMENT.md Batch 4.',
-      );
+    if (mode === 'entra') {
+      const token = this.extractBearer(req);
+      if (token) {
+        req.user = await this.authenticateEntra(token);
+        return true;
+      }
+      // No token: only fall through to the dev-header path if explicitly allowed
+      // (private-network cutover). Otherwise reject.
+      if (process.env.ALLOW_DEV_AUTH_IN_PROD !== 'true') {
+        throw new UnauthorizedException('Missing or malformed Authorization bearer token.');
+      }
     }
 
+    return this.authenticateDevHeader(req);
+  }
+
+  private extractBearer(req: Request): string | null {
+    const header = req.header('authorization') ?? req.header('Authorization');
+    if (!header) return null;
+    const [scheme, value] = header.split(' ');
+    if (scheme?.toLowerCase() !== 'bearer' || !value) return null;
+    return value.trim();
+  }
+
+  private getVerifier(): EntraVerifier {
+    if (!this.verifier) {
+      this.verifier = createEntraVerifier({
+        tenantId: process.env.AZURE_TENANT_ID ?? '',
+        audience: process.env.AZURE_API_AUDIENCE ?? '',
+      });
+    }
+    return this.verifier;
+  }
+
+  private async authenticateEntra(token: string): Promise<AuthedUser> {
+    let claims;
+    try {
+      claims = await this.getVerifier().verify(token);
+    } catch (err) {
+      this.logger.warn(`Entra token rejected: ${err instanceof Error ? err.message : err}`);
+      throw new UnauthorizedException('Invalid or expired Microsoft sign-in token.');
+    }
+
+    // Prefer the stable oid; on first real login, link a seeded user by email
+    // so existing records adopt their Entra object id.
+    let user = await this.prisma.user.findFirst({
+      where: { azureOid: claims.oid, active: true, deletedAt: null },
+      select: { id: true, email: true, displayName: true, roles: true, gradeId: true },
+    });
+
+    if (!user && claims.email) {
+      const byEmail = await this.prisma.user.findFirst({
+        where: { email: claims.email, active: true, deletedAt: null },
+        select: { id: true },
+      });
+      if (byEmail) {
+        user = await this.prisma.user.update({
+          where: { id: byEmail.id },
+          data: { azureOid: claims.oid },
+          select: { id: true, email: true, displayName: true, roles: true, gradeId: true },
+        });
+      }
+    }
+
+    if (!user) {
+      throw new UnauthorizedException(
+        `No active CES Tech user for ${claims.email || claims.oid}. Ask an admin to run the Graph sync.`,
+      );
+    }
+    return user;
+  }
+
+  private async authenticateDevHeader(req: Request & { user?: AuthedUser }): Promise<boolean> {
+    const isProd = process.env.NODE_ENV === 'production';
     const headerEmail = req.header('x-dev-user-email');
     const email =
       (typeof headerEmail === 'string' && headerEmail.trim()) ||

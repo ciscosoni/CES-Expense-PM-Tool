@@ -1,7 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { LoggerModule } from 'nestjs-pino';
+import { CsrfGuard } from './common/csrf.guard.js';
+import { UserThrottlerGuard } from './common/user-throttler.guard.js';
 import { HealthController } from './health.controller.js';
 import { PrismaModule } from './prisma.module.js';
 import { AuthModule } from './auth/auth.module.js';
@@ -28,6 +32,7 @@ import { ChangeRequestsModule } from './change-requests/change-requests.module.j
 import { CommentsModule } from './comments/comments.module.js';
 import { AnomaliesModule } from './anomalies/anomalies.module.js';
 import { AiModule } from './ai/ai.module.js';
+import { GraphModule } from './graph/graph.module.js';
 
 const isProd = process.env.NODE_ENV === 'production';
 
@@ -70,6 +75,8 @@ const isProd = process.env.NODE_ENV === 'production';
             }),
       },
     }),
+    // Rate limiting: 300 requests / minute, keyed per-user (authed) or per-IP.
+    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 300 }]),
     PrismaModule,
     AuditModule,
     AuthModule,
@@ -99,7 +106,13 @@ const isProd = process.env.NODE_ENV === 'production';
     AnomaliesModule,
     // Phase 2F — AI flows (project onboarding wizard, Ask-AI surface later)
     AiModule,
+    GraphModule,
   ],
   controllers: [HealthController],
+  providers: [
+    // CSRF origin-check on mutating routes (prod-enforced), then rate limiting.
+    { provide: APP_GUARD, useClass: CsrfGuard },
+    { provide: APP_GUARD, useClass: UserThrottlerGuard },
+  ],
 })
 export class AppModule {}

@@ -13,7 +13,7 @@ import type { CreateTravelRequestDto, RejectTravelRequestDto } from './travel.dt
 const ENTITY = 'TravelRequest';
 
 const TR_INCLUDE = {
-  user: { select: { id: true, displayName: true, email: true, gradeId: true } },
+  user: { select: { id: true, displayName: true, email: true, gradeId: true, managerId: true } },
   project: { select: { id: true, code: true, name: true, pmId: true } },
   fromCity: { select: { id: true, name: true, tier: true } },
   toCity: { select: { id: true, name: true, tier: true } },
@@ -40,8 +40,16 @@ export class TravelRequestsService {
       ...(opts.userId ? { userId: opts.userId } : {}),
       ...(opts.projectId ? { projectId: opts.projectId } : {}),
       ...(opts.status ? { status: opts.status } : {}),
+      // Pending inbox: SUBMITTED requests where the actor is either the project
+      // PM or the requester's reporting manager (from the Graph-synced chain).
       ...(opts.pendingForApproverId
-        ? { status: 'SUBMITTED', project: { pmId: opts.pendingForApproverId } }
+        ? {
+            status: 'SUBMITTED',
+            OR: [
+              { project: { pmId: opts.pendingForApproverId } },
+              { user: { managerId: opts.pendingForApproverId } },
+            ],
+          }
         : {}),
     };
     return this.prisma.travelRequest.findMany({
@@ -167,11 +175,16 @@ export class TravelRequestsService {
     return after;
   }
 
-  private assertCanApprove(tr: { project: { pmId: string } | null }, actor: AuthedUser): void {
+  private assertCanApprove(
+    tr: { project: { pmId: string } | null; user: { managerId: string | null } },
+    actor: AuthedUser,
+  ): void {
     if (actor.roles.includes('ADMIN')) return;
     if (tr.project && tr.project.pmId === actor.id) return;
+    // Reporting manager (Graph-synced chain) is also an authorized approver.
+    if (tr.user.managerId && tr.user.managerId === actor.id) return;
     throw new ForbiddenException(
-      'Only the project PM (or an admin) can approve/reject this travel request',
+      'Only the project PM, the requester’s reporting manager, or an admin can approve/reject this travel request',
     );
   }
 }
