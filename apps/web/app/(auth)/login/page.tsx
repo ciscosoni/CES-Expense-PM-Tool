@@ -2,6 +2,8 @@ import { ArrowRight, Camera, MapPin, ShieldCheck, Sparkles } from 'lucide-react'
 import { Badge } from '@/components/ui/badge';
 import { loginAsDevUser } from '@/lib/actions/auth';
 import { serverFetch } from '@/lib/server-api';
+import { isEntraConfigured } from '@/lib/msal';
+import { MsalLoginButton } from '@/components/msal-login-button';
 import type { AuthedUser } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
@@ -128,10 +130,24 @@ export default async function LoginPage() {
           <div className="reveal mb-6">
             <h2 className="text-xl font-semibold tracking-tight">Welcome back</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              Choose a seeded user to explore the tool from that role.
+              {isEntraConfigured()
+                ? 'Sign in with your CES Tech Microsoft account.'
+                : 'Choose a seeded user to explore the tool from that role.'}
             </p>
           </div>
 
+          {isEntraConfigured() && (
+            <div className="reveal space-y-3">
+              <MsalLoginButton />
+              <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <span className="flex h-1.5 w-1.5 rounded-full bg-success" />
+                Secured by Microsoft Entra ID
+              </p>
+            </div>
+          )}
+
+          {!isEntraConfigured() && (
+            <>
           {fetchError && (
             <div className="reveal mb-4 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
               <p className="font-medium">
@@ -188,6 +204,8 @@ export default async function LoginPage() {
             <span className="flex h-1.5 w-1.5 rounded-full bg-success" />
             Dev mode · {users.length} seeded {users.length === 1 ? 'user' : 'users'}
           </p>
+            </>
+          )}
         </div>
       </div>
     </div>

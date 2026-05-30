@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server';
-import { getDevUserEmail } from '@/lib/auth-cookie';
+import { getAccessToken, getDevUserEmail } from '@/lib/auth-cookie';
 import { API_BASE_URL } from '@/lib/api-base-url';
 
 /**
@@ -27,9 +27,15 @@ async function forward(req: NextRequest, params: Promise<{ path: string[] }>): P
   const accept = req.headers.get('accept');
   if (accept) headers.set('accept', accept);
 
-  // Dev auth: forward the chosen user as a header. In prod this becomes a Bearer JWT.
-  const email = await getDevUserEmail();
-  if (email) headers.set('x-dev-user-email', email);
+  // Prefer a real Entra access token (set after MSAL login); fall back to the
+  // dev-user header locally. The API guard accepts whichever is present.
+  const token = await getAccessToken();
+  if (token) {
+    headers.set('authorization', `Bearer ${token}`);
+  } else {
+    const email = await getDevUserEmail();
+    if (email) headers.set('x-dev-user-email', email);
+  }
 
   const init: RequestInit = {
     method: req.method,

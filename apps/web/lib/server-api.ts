@@ -1,6 +1,6 @@
 import 'server-only';
 import { API_BASE_URL } from './api-base-url';
-import { getDevUserEmail } from './auth-cookie';
+import { getAccessToken, getDevUserEmail } from './auth-cookie';
 
 /**
  * Server-side API fetch for use in Server Components and Server Actions.
@@ -15,8 +15,13 @@ export async function serverFetch<T>(path: string, init: RequestInit = {}): Prom
   if (init.body && !headers.has('content-type')) {
     headers.set('content-type', 'application/json');
   }
-  const email = await getDevUserEmail();
-  if (email) headers.set('x-dev-user-email', email);
+  const token = await getAccessToken();
+  if (token) {
+    headers.set('authorization', `Bearer ${token}`);
+  } else {
+    const email = await getDevUserEmail();
+    if (email) headers.set('x-dev-user-email', email);
+  }
 
   const cleanPath = path.startsWith('/') ? path : `/${path}`;
   const res = await fetch(`${API_BASE_URL}/api${cleanPath}`, {

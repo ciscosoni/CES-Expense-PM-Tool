@@ -1,7 +1,12 @@
 'use server';
 
 import { redirect } from 'next/navigation';
-import { clearDevUserEmail, setDevUserEmail } from '../auth-cookie';
+import {
+  clearAccessToken,
+  clearDevUserEmail,
+  setAccessToken,
+  setDevUserEmail,
+} from '../auth-cookie';
 
 /**
  * Dev-mode login. Sets the email cookie; the API proxy forwards it as
@@ -16,7 +21,19 @@ export async function loginAsDevUser(formData: FormData) {
   redirect('/');
 }
 
+/**
+ * Entra login bridge: the MSAL client acquires an access token in the browser,
+ * then calls this to persist it as an httpOnly cookie. The proxy / serverFetch
+ * forward it to the API as a Bearer JWT.
+ */
+export async function setEntraSession(token: string) {
+  if (!token) return;
+  await setAccessToken(token);
+  redirect('/');
+}
+
 export async function logout() {
   await clearDevUserEmail();
+  await clearAccessToken();
   redirect('/login');
 }
