@@ -24,5 +24,8 @@ docs/
 CES_Tech_Internal_Tool_ClaudeCode_Prompt.md
 DEPLOYMENT.md
 
-# We don't ship mobile from the same image
-apps/mobile
+# We don't ship mobile source from the same image, but pnpm install
+# --frozen-lockfile needs its manifest present to validate the workspace
+# lockfile. Exclude the contents, keep package.json.
+apps/mobile/*
+!apps/mobile/package.json
