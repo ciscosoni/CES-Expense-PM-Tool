@@ -41,3 +41,7 @@ Thumbs.db
 # misc
 .cache/
 *.tgz
+
+# Local scratch (screenshots, dev server logs)
+.shots/
+.devlogs/
