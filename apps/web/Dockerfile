@@ -27,10 +27,12 @@ ENV PATH=$PNPM_HOME:$PATH
 FROM base AS deps
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc turbo.json ./
 COPY apps/web/package.json ./apps/web/
+# All workspace manifests must be present + match the lockfile, or
+# --frozen-lockfile fails (ERR_PNPM_OUTDATED_LOCKFILE). --filter @ces/web...
+# still installs only the web subgraph, so the other apps add no deps.
+COPY apps/api/package.json ./apps/api/
+COPY apps/mobile/package.json ./apps/mobile/
 COPY packages ./packages
-RUN mkdir -p apps/api apps/mobile && \
-    echo '{"name":"@ces/api","private":true,"version":"0.0.0"}' > apps/api/package.json && \
-    echo '{"name":"@ces/mobile","private":true,"version":"0.0.0"}' > apps/mobile/package.json
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm-store \
     pnpm install --frozen-lockfile --filter @ces/web... --prod=false
 

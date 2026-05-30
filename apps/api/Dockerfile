@@ -28,11 +28,12 @@ ENV PATH=$PNPM_HOME:$PATH
 FROM base AS deps
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc turbo.json ./
 COPY apps/api/package.json ./apps/api/
+# All workspace manifests must be present + match the lockfile, or
+# --frozen-lockfile fails (ERR_PNPM_OUTDATED_LOCKFILE). --filter @ces/api...
+# still installs only the api subgraph, so the other apps add no deps.
+COPY apps/web/package.json ./apps/web/
+COPY apps/mobile/package.json ./apps/mobile/
 COPY packages ./packages
-# Stub out apps the api image doesn't need so pnpm install doesn't fail.
-RUN mkdir -p apps/web apps/mobile && \
-    echo '{"name":"@ces/web","private":true,"version":"0.0.0"}' > apps/web/package.json && \
-    echo '{"name":"@ces/mobile","private":true,"version":"0.0.0"}' > apps/mobile/package.json
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm-store \
     pnpm install --frozen-lockfile --filter @ces/api... --prod=false
 
@@ -50,10 +51,9 @@ RUN pnpm --filter @ces/api... build
 FROM base AS prod-deps
 COPY package.json pnpm-workspace.yaml pnpm-lock.yaml .npmrc turbo.json ./
 COPY apps/api/package.json ./apps/api/
+COPY apps/web/package.json ./apps/web/
+COPY apps/mobile/package.json ./apps/mobile/
 COPY packages ./packages
-RUN mkdir -p apps/web apps/mobile && \
-    echo '{"name":"@ces/web","private":true,"version":"0.0.0"}' > apps/web/package.json && \
-    echo '{"name":"@ces/mobile","private":true,"version":"0.0.0"}' > apps/mobile/package.json
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm-store \
     pnpm install --frozen-lockfile --filter @ces/api... --prod=true
 
