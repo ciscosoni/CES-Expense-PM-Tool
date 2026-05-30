@@ -13,7 +13,7 @@ export function AdminShell({
   children: React.ReactNode;
 }) {
   return (
-    <div className="container py-8">
+    <div className="container py-6">
       <PageHeader title={title} description={description} actions={actions} />
       {children}
     </div>

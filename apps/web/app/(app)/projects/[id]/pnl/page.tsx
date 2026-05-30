@@ -1,4 +1,6 @@
+import { IndianRupee, Percent, TrendingUp, Wallet } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { StatCard } from '@/components/stat-card';
 import {
   Table,
   TableBody,
@@ -31,38 +33,51 @@ export default async function ProjectPnlPage({ params }: { params: Promise<{ id:
   return (
     <div className="space-y-6">
       <div className="grid gap-4 md:grid-cols-4">
-        <Card>
-          <CardHeader>
-            <CardDescription>Revenue</CardDescription>
-            <CardTitle className="text-2xl font-mono">
-              {formatMoney(pnl.revenue.amount, ccy)}
-            </CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardDescription>Total cost</CardDescription>
-            <CardTitle className="text-2xl font-mono">
-              {formatMoney(pnl.cost.amount, ccy)}
-            </CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardDescription>Gross profit</CardDescription>
-            <CardTitle className="text-2xl font-mono">
-              {formatMoney(pnl.grossProfit.amount, ccy)}
-            </CardTitle>
-          </CardHeader>
-        </Card>
-        <Card>
-          <CardHeader>
-            <CardDescription>Margin</CardDescription>
-            <CardTitle className="text-2xl font-mono">
-              {pnl.marginPercent !== null ? `${pnl.marginPercent.toFixed(2)}%` : '—'}
-            </CardTitle>
-          </CardHeader>
-        </Card>
+        <StatCard
+          index={0}
+          label="Revenue"
+          value={Number(pnl.revenue.amount)}
+          money
+          currency={ccy}
+          tone="positive"
+          icon={<IndianRupee className="h-4 w-4" />}
+        />
+        <StatCard
+          index={1}
+          label="Total cost"
+          value={Number(pnl.cost.amount)}
+          money
+          currency={ccy}
+          tone="muted"
+          icon={<Wallet className="h-4 w-4" />}
+        />
+        <StatCard
+          index={2}
+          label="Gross profit"
+          value={Number(pnl.grossProfit.amount)}
+          money
+          currency={ccy}
+          tone={Number(pnl.grossProfit.amount) >= 0 ? 'positive' : 'negative'}
+          icon={<TrendingUp className="h-4 w-4" />}
+        />
+        <StatCard
+          index={3}
+          label="Margin"
+          value={pnl.marginPercent ?? 0}
+          percent
+          decimals={2}
+          placeholder={pnl.marginPercent === null ? '—' : undefined}
+          tone={
+            pnl.marginPercent === null
+              ? 'muted'
+              : pnl.marginPercent >= 30
+                ? 'positive'
+                : pnl.marginPercent < 15
+                  ? 'negative'
+                  : 'primary'
+          }
+          icon={<Percent className="h-4 w-4" />}
+        />
       </div>
 
       {baseline && (

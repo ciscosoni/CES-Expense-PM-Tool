@@ -167,27 +167,35 @@ export function Sidebar({ user }: { user: AuthedUser }) {
     items: s.items.filter((it) => it.roles.some((r) => userRoles.has(r))),
   })).filter((s) => s.items.length > 0);
 
+  const initials = user.displayName
+    .split(' ')
+    .map((p) => p[0])
+    .filter(Boolean)
+    .slice(0, 2)
+    .join('')
+    .toUpperCase();
+
   return (
-    <aside className="hidden h-screen w-64 shrink-0 flex-col border-r border-border/60 bg-card/30 md:flex">
+    <aside className="relative hidden h-screen w-64 shrink-0 flex-col border-r border-border/60 bg-card/40 backdrop-blur-xl md:flex">
       <div className="flex h-14 items-center gap-2.5 border-b border-border/60 px-4">
         <div
-          className="grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-primary to-[hsl(var(--ai-from))] text-primary-foreground text-[11px] font-bold shadow-[inset_0_1px_0_rgb(255_255_255/0.18)]"
+          className="brand-surface relative grid h-8 w-8 place-items-center rounded-lg text-[11px] font-bold text-white shadow-[inset_0_1px_0_rgb(255_255_255/0.25),0_4px_16px_-3px_hsl(var(--glow)/0.8)]"
           aria-hidden
         >
           CES
         </div>
         <div className="leading-tight">
-          <p className="text-sm font-semibold">CES Tech</p>
-          <p className="text-[10px] uppercase tracking-wider text-muted-foreground">
+          <p className="text-sm font-semibold tracking-tight">CES Tech</p>
+          <p className="text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
             Internal Operations
           </p>
         </div>
       </div>
 
-      <nav className="flex-1 overflow-y-auto px-2 py-3">
+      <nav className="flex-1 overflow-y-auto px-2.5 py-3">
         {sectionsVisible.map((s) => (
           <div key={s.label} className="mb-4">
-            <p className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-[0.08em] text-muted-foreground/80">
+            <p className="px-3 pb-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground/60">
               {s.label}
             </p>
             <ul className="space-y-0.5">
@@ -199,24 +207,31 @@ export function Sidebar({ user }: { user: AuthedUser }) {
                     <Link
                       href={item.href}
                       className={cn(
-                        'group relative flex items-center justify-between gap-2 rounded-md px-2.5 py-1.5 text-sm transition-colors',
+                        'group relative flex items-center justify-between gap-2 rounded-lg px-2.5 py-1.5 text-[13px] font-medium transition-all duration-200',
                         active
-                          ? 'bg-accent text-accent-foreground'
-                          : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground',
+                          ? 'bg-[linear-gradient(90deg,hsl(var(--primary)/0.2),hsl(var(--primary)/0.04))] text-foreground shadow-[inset_0_1px_0_hsl(0_0%_100%/0.04)]'
+                          : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
                       )}
                     >
                       {active && (
                         <span
-                          className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-r-full bg-primary"
+                          className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-primary shadow-[0_0_12px_hsl(var(--glow)/0.9)]"
                           aria-hidden
                         />
                       )}
-                      <span className="flex items-center gap-2">
-                        <Icon className="h-4 w-4" />
+                      <span className="flex items-center gap-2.5">
+                        <Icon
+                          className={cn(
+                            'h-4 w-4 shrink-0 transition-colors',
+                            active
+                              ? 'text-primary'
+                              : 'text-muted-foreground/70 group-hover:text-foreground',
+                          )}
+                        />
                         {item.label}
                       </span>
                       {item.stub && (
-                        <span className="text-[9px] uppercase tracking-wider text-muted-foreground/50">
+                        <span className="rounded bg-muted/60 px-1.5 py-px text-[8px] font-semibold uppercase tracking-wider text-muted-foreground/60">
                           soon
                         </span>
                       )}
@@ -230,16 +245,24 @@ export function Sidebar({ user }: { user: AuthedUser }) {
       </nav>
 
       <div className="border-t border-border/60 p-3">
-        <div className="mb-2">
-          <p className="truncate text-sm font-medium">{user.displayName}</p>
-          <p className="truncate text-xs text-muted-foreground">{user.email}</p>
-          <div className="mt-1.5 flex flex-wrap gap-1">
-            {user.roles.map((r) => (
-              <Badge key={r} variant="secondary" className="text-[9px]">
-                {r.replace('_', ' ')}
-              </Badge>
-            ))}
+        <div className="mb-2.5 flex items-center gap-2.5 rounded-lg p-1.5">
+          <div
+            className="brand-surface grid h-9 w-9 shrink-0 place-items-center rounded-full text-xs font-semibold text-white ring-1 ring-border/60"
+            aria-hidden
+          >
+            {initials}
           </div>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium leading-tight">{user.displayName}</p>
+            <p className="truncate text-[11px] text-muted-foreground">{user.email}</p>
+          </div>
+        </div>
+        <div className="mb-2.5 flex flex-wrap gap-1 px-1.5">
+          {user.roles.map((r) => (
+            <Badge key={r} variant="info" className="text-[9px]">
+              {r.replace('_', ' ')}
+            </Badge>
+          ))}
         </div>
         <form action={logout}>
           <Button type="submit" variant="outline" size="sm" className="w-full">

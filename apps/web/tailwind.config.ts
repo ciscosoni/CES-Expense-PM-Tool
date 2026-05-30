@@ -45,6 +45,14 @@ const config: Config = {
           DEFAULT: 'hsl(var(--card))',
           foreground: 'hsl(var(--card-foreground))',
         },
+        elevated: 'hsl(var(--elevated))',
+        success: 'hsl(var(--success))',
+        warning: 'hsl(var(--warning))',
+        ai: {
+          from: 'hsl(var(--ai-from))',
+          via: 'hsl(var(--ai-via))',
+          to: 'hsl(var(--ai-to))',
+        },
       },
       borderRadius: {
         lg: 'var(--radius)',
@@ -52,7 +60,8 @@ const config: Config = {
         sm: 'calc(var(--radius) - 4px)',
       },
       fontFamily: {
-        sans: ['var(--font-inter)', 'system-ui', 'sans-serif'],
+        sans: ['var(--font-sans)', 'ui-sans-serif', 'system-ui', 'sans-serif'],
+        mono: ['var(--font-mono)', 'ui-monospace', 'monospace'],
       },
       keyframes: {
         'accordion-down': {
@@ -63,10 +72,25 @@ const config: Config = {
           from: { height: 'var(--radix-accordion-content-height)' },
           to: { height: '0' },
         },
+        'fade-up': {
+          from: { opacity: '0', transform: 'translateY(10px)' },
+          to: { opacity: '1', transform: 'translateY(0)' },
+        },
+        'glow-pulse': {
+          '0%, 100%': { opacity: '0.6' },
+          '50%': { opacity: '1' },
+        },
+        'float-slow': {
+          '0%, 100%': { transform: 'translateY(0)' },
+          '50%': { transform: 'translateY(-8px)' },
+        },
       },
       animation: {
         'accordion-down': 'accordion-down 0.2s ease-out',
         'accordion-up': 'accordion-up 0.2s ease-out',
+        'fade-up': 'fade-up 0.5s cubic-bezier(0.22,1,0.36,1) forwards',
+        'glow-pulse': 'glow-pulse 3s ease-in-out infinite',
+        'float-slow': 'float-slow 6s ease-in-out infinite',
       },
     },
   },

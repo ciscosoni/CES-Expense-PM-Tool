@@ -2,15 +2,18 @@ import Link from 'next/link';
 import {
   AlertTriangle,
   ArrowUpRight,
+  FolderKanban,
+  IndianRupee,
   ShieldCheck,
   Sparkles,
+  Timer,
   TrendingDown,
   TrendingUp,
 } from 'lucide-react';
 import { AdminShell } from '@/components/admin-shell';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Sparkline } from '@/components/sparkline';
+import { StatCard } from '@/components/stat-card';
 import { AiBadge } from '@/components/ai-badge';
 import {
   Table,
@@ -118,23 +121,32 @@ export default async function DashboardPage() {
       }
     >
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-        <KpiCard
+        <StatCard
+          index={0}
           label="Active projects"
-          value={kpis.activeProjects.toString()}
+          value={kpis.activeProjects}
           hint={`${kpis.flaggedReceipts} flagged receipts open`}
           spark={trendLine(kpis.activeProjects || 1, 10, 0.05)}
           tone="primary"
+          icon={<FolderKanban className="h-4 w-4" />}
         />
-        <KpiCard
+        <StatCard
+          index={1}
           label="Portfolio revenue"
-          value={formatMoney(kpis.portfolioRevenue)}
+          value={Number(kpis.portfolioRevenue)}
+          money
           hint={`Cost ${formatMoney(kpis.portfolioCost)}`}
           spark={trendLine(Number(kpis.portfolioRevenue) || 1)}
           tone="positive"
+          icon={<IndianRupee className="h-4 w-4" />}
         />
-        <KpiCard
+        <StatCard
+          index={2}
           label="Margin"
-          value={kpis.portfolioMargin !== null ? `${kpis.portfolioMargin.toFixed(1)}%` : '—'}
+          value={kpis.portfolioMargin ?? 0}
+          percent
+          decimals={1}
+          placeholder={kpis.portfolioMargin === null ? '—' : undefined}
           hint={kpis.portfolioMargin !== null && kpis.portfolioMargin >= 30 ? 'Healthy' : 'Watch'}
           spark={trendLine(kpis.portfolioMargin ?? 0)}
           tone={
@@ -144,18 +156,20 @@ export default async function DashboardPage() {
                 ? 'negative'
                 : 'primary'
           }
-          icon={<MarginIcon className="h-3.5 w-3.5" />}
+          icon={<MarginIcon className="h-4 w-4" />}
         />
-        <KpiCard
+        <StatCard
+          index={3}
           label="Pending approvals"
-          value={kpis.pendingApprovals.toString()}
+          value={kpis.pendingApprovals}
           hint={`Reimb ${formatMoney(kpis.pendingReimbursementAmount)} · Paid MTD ${formatMoney(kpis.reimbursedThisMonth)}`}
           spark={trendLine(kpis.pendingApprovals || 1, 10, 0.12)}
           tone="muted"
+          icon={<Timer className="h-4 w-4" />}
         />
       </div>
 
-      <section className="mt-8">
+      <section className="mt-6">
         <header className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold tracking-tight">Portfolio P&amp;L</h2>
           <span className="text-[11px] text-muted-foreground">
@@ -343,7 +357,7 @@ export default async function DashboardPage() {
         </section>
       </div>
 
-      <section className="mt-8">
+      <section className="mt-6">
         <header className="mb-3 flex items-center justify-between">
           <h2 className="text-sm font-semibold tracking-tight">Open anomalies</h2>
           <span className="text-[11px] text-muted-foreground">
@@ -401,7 +415,7 @@ export default async function DashboardPage() {
         </Card>
       </section>
 
-      <Card tone="ai" className="mt-8">
+      <Card tone="ai" className="mt-6">
         <CardHeader className="flex-row items-start justify-between gap-4">
           <div>
             <CardDescription className="flex items-center gap-1.5">
@@ -428,44 +442,6 @@ export default async function DashboardPage() {
         </CardContent>
       </Card>
     </AdminShell>
-  );
-}
-
-function KpiCard({
-  label,
-  value,
-  hint,
-  spark,
-  tone,
-  icon,
-}: {
-  label: string;
-  value: string;
-  hint?: string;
-  spark: number[];
-  tone: 'primary' | 'positive' | 'negative' | 'muted';
-  icon?: React.ReactNode;
-}) {
-  return (
-    <Card>
-      <CardHeader className="flex-row items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <CardDescription>{label}</CardDescription>
-          <CardTitle className="mt-1 text-2xl">
-            <span className="flex items-center gap-1.5">
-              {value}
-              {icon}
-            </span>
-          </CardTitle>
-        </div>
-        <Sparkline values={spark} tone={tone} width={88} height={28} />
-      </CardHeader>
-      {hint && (
-        <CardContent>
-          <p className="truncate text-[11px] text-muted-foreground">{hint}</p>
-        </CardContent>
-      )}
-    </Card>
   );
 }
 

@@ -12,9 +12,9 @@
     "clean": "rm -rf .next .turbo *.tsbuildinfo"
   },
   "dependencies": {
-    "@ces/domain": "workspace:*",
     "@azure/msal-browser": "^3.27.0",
     "@azure/msal-react": "^2.2.0",
+    "@ces/domain": "workspace:*",
     "@hookform/resolvers": "^3.9.1",
     "@radix-ui/react-dialog": "^1.1.2",
     "@radix-ui/react-dropdown-menu": "^2.1.2",
