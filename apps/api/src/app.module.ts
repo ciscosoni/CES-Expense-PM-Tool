@@ -34,6 +34,8 @@ import { AnomaliesModule } from './anomalies/anomalies.module.js';
 import { AiModule } from './ai/ai.module.js';
 import { GraphModule } from './graph/graph.module.js';
 import { StorageModule } from './storage/storage.module.js';
+import { NotificationsModule } from './notifications/notifications.module.js';
+import { SchedulerModule } from './scheduler/scheduler.module.js';
 
 const isProd = process.env.NODE_ENV === 'production';
 
@@ -109,6 +111,8 @@ const isProd = process.env.NODE_ENV === 'production';
     AiModule,
     GraphModule,
     StorageModule,
+    NotificationsModule,
+    SchedulerModule,
   ],
   controllers: [HealthController],
   providers: [

@@ -3,6 +3,7 @@ import { Decimal } from '@prisma/client/runtime/library';
 import type { Prisma, Reimbursement } from '@prisma/client';
 import { PrismaService } from '../prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 import type { AuthedUser } from '../auth/index.js';
 import type { CreateReimbursementDto, MarkPaidDto } from './reimbursement.dto.js';
 
@@ -28,6 +29,7 @@ export class ReimbursementsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async list(status?: 'PENDING' | 'APPROVED' | 'PAID' | 'CANCELLED') {
@@ -177,6 +179,17 @@ export class ReimbursementsService {
       actorId: actor.id,
       before,
       after,
+    });
+
+    await this.notifications.notify({
+      userId: before.userId,
+      kind: 'REIMBURSEMENT_PAID',
+      title: `Reimbursement paid — ${before.currency} ${before.totalAmount}`,
+      body: input.reference ? `Reference: ${input.reference}` : undefined,
+      severity: 'INFO',
+      entityKind: 'REIMBURSEMENT',
+      entityId: id,
+      linkPath: '/expenses',
     });
     return after;
   }

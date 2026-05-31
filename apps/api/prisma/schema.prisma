@@ -45,6 +45,7 @@ model User {
   authoredComments          Comment[]                  @relation("CommentAuthor")
   createdChangeRequests     ChangeRequest[]            @relation("ChangeRequestCreator")
   decidedChangeRequests     ChangeRequest[]            @relation("ChangeRequestApprover")
+  notifications             Notification[]             @relation("UserNotifications")
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
   deletedAt     DateTime?
@@ -844,4 +845,30 @@ model AuditLog {
   createdAt DateTime @default(now())
 
   @@index([entity, entityId, createdAt])
+}
+
+// ---------- Notifications (Phase 3 — Automation Heartbeat) ----------
+
+/// In-app notification record. Also the audit trail of what was delivered to
+/// which channel. Emitted by domain events (approvals, reimbursements) and the
+/// scheduler (anomaly sweeps). Delivery to Teams/email is layered on top.
+model Notification {
+  id         String   @id @default(uuid()) @db.Uuid
+  userId     String   @db.Uuid
+  user       User     @relation("UserNotifications", fields: [userId], references: [id], onDelete: Cascade)
+  kind       String
+  title      String
+  body       String?
+  severity   String   @default("INFO") // INFO | WARN | CRITICAL
+  /// Polymorphic deep-link target + the web route to open it.
+  entityKind String?
+  entityId   String?  @db.Uuid
+  linkPath   String?
+  /// Comma-separated channels the notification was delivered to (IN_APP,TEAMS,EMAIL).
+  channels   String   @default("IN_APP")
+  readAt     DateTime?
+  createdAt  DateTime @default(now())
+
+  @@index([userId, readAt])
+  @@index([userId, createdAt])
 }

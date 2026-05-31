@@ -7,6 +7,7 @@ import {
 import type { Prisma, TravelRequest } from '@prisma/client';
 import { PrismaService } from '../prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
+import { NotificationsService } from '../notifications/notifications.service.js';
 import type { AuthedUser } from '../auth/index.js';
 import type { CreateTravelRequestDto, RejectTravelRequestDto } from './travel.dto.js';
 
@@ -26,6 +27,7 @@ export class TravelRequestsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly notifications: NotificationsService,
   ) {}
 
   async list(opts: {
@@ -116,6 +118,20 @@ export class TravelRequestsService {
       before,
       after,
     });
+
+    // Notify the approvers: project PM + the requester's reporting manager.
+    await this.notifications.notifyMany(
+      [before.project?.pmId, before.user.managerId].filter((x): x is string => !!x),
+      {
+        kind: 'TRAVEL_APPROVAL_REQUESTED',
+        title: `Travel request from ${before.user.displayName}`,
+        body: `${before.fromCity.name} → ${before.toCity.name}, ${new Date(before.startDate).toISOString().slice(0, 10)}`,
+        severity: 'INFO',
+        entityKind: 'TRAVEL',
+        entityId: id,
+        linkPath: '/travel/inbox',
+      },
+    );
     return after;
   }
 
