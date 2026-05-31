@@ -5,8 +5,9 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { ChevronDown, ChevronRight, Plus, Send } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, ScanLine, Send } from 'lucide-react';
 import { ReceiptUpload } from '@/components/expenses/receipt-upload';
+import { AiBadge } from '@/components/ai-badge';
 import { toast } from 'sonner';
 import { AdminShell } from '@/components/admin-shell';
 import { Badge } from '@/components/ui/badge';
@@ -141,6 +142,29 @@ const NewExpenseSchema = z.object({
 });
 type NewExpenseInput = z.infer<typeof NewExpenseSchema>;
 
+interface ReceiptAnalysis {
+  ocr: { source: 'azure' | 'mock'; vendor?: string; amount?: string; currency?: string } | null;
+  suggestion: {
+    amount: string | null;
+    currency: string | null;
+    incurredOn: string | null;
+    category: string | null;
+    notes: string | null;
+    tripId: string | null;
+    projectId: string | null;
+  };
+}
+
+/** Read a File into a bare base64 string (no data: prefix) for the API. */
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).split(',')[1] ?? '');
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
 function NewExpenseDialog() {
   const [open, setOpen] = React.useState(false);
   const qc = useQueryClient();
@@ -160,12 +184,59 @@ function NewExpenseDialog() {
       notes: '',
     },
   });
+  // Snapped receipt held in state until the expense exists, then attached.
+  const [scan, setScan] = React.useState<{ name: string; type: string; base64: string } | null>(
+    null,
+  );
+  const [analyzing, setAnalyzing] = React.useState(false);
+
+  async function handleScan(file: File) {
+    setAnalyzing(true);
+    try {
+      const base64 = await fileToBase64(file);
+      const res = await api.post<ReceiptAnalysis>('/receipts/analyze', {
+        fileName: file.name,
+        contentType: file.type || 'image/jpeg',
+        fileBase64: base64,
+      });
+      setScan({ name: file.name, type: file.type || 'image/jpeg', base64 });
+      const s = res.suggestion;
+      if (s.amount) form.setValue('amount', s.amount, { shouldDirty: true });
+      if (s.currency) form.setValue('currency', s.currency);
+      if (s.incurredOn) form.setValue('incurredOn', s.incurredOn);
+      if (s.category) form.setValue('category', s.category as ExpenseCategory);
+      if (s.notes) form.setValue('notes', s.notes);
+      if (s.projectId) form.setValue('projectId', s.projectId, { shouldDirty: true });
+      toast.success(
+        `Prefilled from receipt${res.ocr?.source === 'mock' ? ' (simulated OCR — real in cloud)' : ''}.`,
+      );
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Could not read receipt');
+    } finally {
+      setAnalyzing(false);
+    }
+  }
+
   const create = useMutation({
-    mutationFn: (input: NewExpenseInput) => api.post<Expense>('/expenses', input),
+    mutationFn: async (input: NewExpenseInput) => {
+      const expense = await api.post<Expense>('/expenses', input);
+      if (scan) {
+        await api
+          .post('/receipts', {
+            expenseId: expense.id,
+            fileName: scan.name,
+            contentType: scan.type,
+            fileBase64: scan.base64,
+          })
+          .catch(() => undefined); // expense is saved; receipt flags are non-blocking
+      }
+      return expense;
+    },
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: ['expenses'] });
       toast.success('Saved as draft. Submit when ready.');
       setOpen(false);
+      setScan(null);
       form.reset();
     },
     onError: (err: unknown) => toast.error(err instanceof ApiError ? err.message : String(err)),
@@ -183,10 +254,40 @@ function NewExpenseDialog() {
           <DialogHeader>
             <DialogTitle>New expense</DialogTitle>
             <DialogDescription>
-              Receipt upload with EXIF + perceptual hash + OCR lands in Slice 1C-γ — for now just
-              enter the line manually.
+              Snap or upload the receipt to auto-fill — we read the amount, date, vendor and
+              category, and match it to your trip. Or enter the line manually.
             </DialogDescription>
           </DialogHeader>
+
+          <label
+            className="ai-surface flex cursor-pointer items-center gap-3 rounded-xl px-4 py-3 text-sm transition-colors hover:bg-accent/30"
+            aria-busy={analyzing}
+          >
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[linear-gradient(135deg,hsl(var(--ai-from)),hsl(var(--ai-to)))] text-white">
+              <ScanLine className="h-4 w-4" />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block font-medium">
+                {analyzing ? 'Reading receipt…' : scan ? 'Receipt attached — re-scan?' : 'Scan a receipt'}
+              </span>
+              <span className="block truncate text-xs text-muted-foreground">
+                {scan ? scan.name : 'JPG/PNG/PDF — auto-fills the form below'}
+              </span>
+            </span>
+            <AiBadge label="AI" />
+            <input
+              type="file"
+              accept="image/*,application/pdf"
+              className="hidden"
+              disabled={analyzing}
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) void handleScan(f);
+                e.target.value = '';
+              }}
+            />
+          </label>
+
           <Field label="Project" error={form.formState.errors.projectId?.message}>
             <Select
               value={form.watch('projectId')}
