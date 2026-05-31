@@ -13,7 +13,7 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, type AuthedUser } from '../auth/index.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
-import { CreateReceiptDto } from './receipt.dto.js';
+import { AnalyzeReceiptDto, CreateReceiptDto } from './receipt.dto.js';
 import { ReceiptsService } from './receipts.service.js';
 
 @ApiTags('Receipts (fraud detection)')
@@ -35,6 +35,15 @@ export class ReceiptsController {
   })
   create(@Body() body: CreateReceiptDto, @CurrentUser() user: AuthedUser) {
     return this.receipts.create(body, user);
+  }
+
+  @Post('receipts/analyze')
+  @ApiOperation({
+    summary:
+      'OCR + EXIF a snapped receipt and return prefill suggestions (amount, date, category, vendor, matched trip) — without creating an expense.',
+  })
+  analyze(@Body() body: AnalyzeReceiptDto, @CurrentUser() user: AuthedUser) {
+    return this.receipts.analyze(body, user);
   }
 
   @Delete('receipts/:id')

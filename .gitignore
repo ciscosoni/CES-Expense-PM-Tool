@@ -45,3 +45,6 @@ Thumbs.db
 # Local scratch (screenshots, dev server logs)
 .shots/
 .devlogs/
+
+# Local receipt blob store (dev)
+apps/api/.uploads/

@@ -21,3 +21,15 @@ export const CreateReceiptSchema = z.object({
 });
 export class CreateReceiptDto extends createZodDto(CreateReceiptSchema) {}
 export interface CreateReceiptDto extends z.infer<typeof CreateReceiptSchema> {}
+
+/**
+ * Analyze a snapped receipt WITHOUT creating an expense yet — returns OCR +
+ * EXIF-derived suggestions so the New Expense form prefills itself.
+ */
+export const AnalyzeReceiptSchema = z.object({
+  fileName: z.string().min(1).max(200),
+  contentType: z.string().min(1).max(80),
+  fileBase64: z.string().min(8),
+});
+export class AnalyzeReceiptDto extends createZodDto(AnalyzeReceiptSchema) {}
+export interface AnalyzeReceiptDto extends z.infer<typeof AnalyzeReceiptSchema> {}

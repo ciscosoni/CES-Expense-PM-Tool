@@ -33,6 +33,7 @@ import { CommentsModule } from './comments/comments.module.js';
 import { AnomaliesModule } from './anomalies/anomalies.module.js';
 import { AiModule } from './ai/ai.module.js';
 import { GraphModule } from './graph/graph.module.js';
+import { StorageModule } from './storage/storage.module.js';
 
 const isProd = process.env.NODE_ENV === 'production';
 
@@ -107,6 +108,7 @@ const isProd = process.env.NODE_ENV === 'production';
     // Phase 2F — AI flows (project onboarding wizard, Ask-AI surface later)
     AiModule,
     GraphModule,
+    StorageModule,
   ],
   controllers: [HealthController],
   providers: [
