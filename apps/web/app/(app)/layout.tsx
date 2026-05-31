@@ -1,5 +1,6 @@
 import { Sidebar } from '@/components/sidebar';
 import { CommandPalette } from '@/components/command-palette';
+import { NotificationBell } from '@/components/notification-bell';
 import { requireUser } from '@/lib/current-user';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -18,7 +19,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               Signed in as <span className="text-foreground/90">{user.displayName}</span>
             </span>
           </div>
-          <CommandPalette />
+          <div className="flex items-center gap-1.5">
+            <NotificationBell />
+            <CommandPalette />
+          </div>
         </header>
         <div className="flex-1 overflow-y-auto">{children}</div>
       </main>

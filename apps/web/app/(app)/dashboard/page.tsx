@@ -306,7 +306,7 @@ export default async function DashboardPage() {
                         }
                       />
                       <div className="min-w-0 flex-1">
-                        <p>
+                        <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5">
                           <Badge variant="outline" className="mr-1 text-[9px]">
                             {f.severity}
                           </Badge>
@@ -319,7 +319,7 @@ export default async function DashboardPage() {
                             {f.project.code}
                           </Link>{' '}
                           · {formatMoney(f.expense.amount, f.expense.currency)}
-                        </p>
+                        </div>
                         {f.detail && <p className="mt-0.5 text-muted-foreground">{f.detail}</p>}
                       </div>
                     </div>
@@ -343,12 +343,12 @@ export default async function DashboardPage() {
               <ul className="divide-y divide-border/60">
                 {anomalies.overbookedEngineers.map((u) => (
                   <li key={u.user.id} className="p-3 text-xs">
-                    <p>
+                    <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5">
                       <Badge variant="destructive" className="mr-1 text-[9px]">
                         {u.totalAllocation}%
                       </Badge>
                       <span className="font-semibold">{u.user.displayName}</span> — {u.projects}
-                    </p>
+                    </div>
                   </li>
                 ))}
               </ul>
@@ -396,12 +396,12 @@ export default async function DashboardPage() {
                         }
                       />
                       <div className="min-w-0 flex-1">
-                        <p>
+                        <div className="flex flex-wrap items-center gap-x-1 gap-y-0.5">
                           <Badge className={`mr-1 border text-[9px] ${sevClass}`}>
                             {a.severity}
                           </Badge>
                           <span className="font-semibold">{a.kind.replace(/_/g, ' ')}</span>
-                        </p>
+                        </div>
                         {a.detail && (
                           <p className="mt-0.5 text-muted-foreground">{a.detail}</p>
                         )}
