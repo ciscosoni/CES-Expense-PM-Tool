@@ -44,6 +44,13 @@ export class DashboardsController {
     return this.dashboards.dataQuality();
   }
 
+  @Get('budget-worklist')
+  @Roles('ADMIN', 'FINANCE', 'PROJECT_OWNER')
+  @ApiOperation({ summary: 'Projects needing a real budget — missing or break-even placeholder' })
+  budgetWorklist() {
+    return this.dashboards.budgetWorklist();
+  }
+
   @Get('projects/:id/data-quality')
   @Roles('ADMIN', 'PROJECT_OWNER', 'PROJECT_MANAGER', 'FINANCE', 'ENGINEER')
   @ApiOperation({ summary: 'Per-project trust signals: overhead bucket / no budget / placeholder budget' })

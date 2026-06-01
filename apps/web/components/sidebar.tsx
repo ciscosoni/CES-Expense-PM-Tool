@@ -168,6 +168,12 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
         icon: AlertTriangle,
         roles: ['ADMIN'],
       },
+      {
+        href: '/admin/budget-worklist',
+        label: 'Budget worklist',
+        icon: AlertTriangle,
+        roles: ['ADMIN', 'FINANCE', 'PROJECT_OWNER'],
+      },
     ],
   },
 ];

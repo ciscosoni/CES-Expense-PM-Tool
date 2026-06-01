@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import type { Project as PrismaProject, Milestone as PrismaMilestone } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { calculatePnl, type EffectiveCostRate, type TimeLogEntry } from '@ces/pnl-engine';
 import { PrismaService } from '../prisma.service.js';
@@ -199,69 +200,7 @@ export class DashboardsService {
 
     const out: PortfolioRow[] = [];
     for (const p of projects) {
-      const timeLogs = await this.prisma.timeLog.findMany({
-        where: { task: { projectId: p.id, deletedAt: null } },
-        include: { user: { select: { gradeId: true } } },
-      });
-      const timeLogEntries: TimeLogEntry[] = timeLogs
-        .filter((l) => l.user.gradeId !== null)
-        .map((l) => ({
-          gradeId: l.user.gradeId!,
-          date: l.date.toISOString().slice(0, 10),
-          hours: Number(l.hours.toString()),
-        }));
-      const costRates: EffectiveCostRate[] = (
-        await this.prisma.costRate.findMany({
-          where: { gradeId: { in: Array.from(new Set(timeLogEntries.map((l) => l.gradeId))) } },
-        })
-      ).map((c) => ({
-        gradeId: c.gradeId,
-        ratePerDay: c.ratePerDay.toString(),
-        currency: c.currency,
-        effectiveFrom: c.effectiveFrom.toISOString().slice(0, 10),
-      }));
-
-      const trips = await this.prisma.trip.findMany({
-        where: {
-          travelRequest: { projectId: p.id, status: { in: ['CLOSED', 'COMPLETED'] } },
-        },
-      });
-      const tripCosts = trips.map((t) => ({
-        travel: t.travelActualCost.toString(),
-        lodging: t.lodgingActualCost.toString(),
-        da: (t.daAmount ?? new Decimal(0)).toString(),
-        localConveyance: t.localConveyanceActualCost.toString(),
-        currency: t.daCurrency ?? p.contractCurrency,
-      }));
-
-      const expenses = await this.prisma.expense.findMany({
-        where: { projectId: p.id, status: { in: ['APPROVED', 'REIMBURSED'] }, deletedAt: null },
-      });
-      const otherExpenses = expenses.map((e) => ({
-        amount: e.amount.toString(),
-        currency: e.currency,
-      }));
-
-      const pnl = calculatePnl({
-        reportingCurrency: p.contractCurrency,
-        billingModel: p.billingModel,
-        contractValue: p.contractValue.toString(),
-        milestones: p.milestones.map((m) => ({
-          id: m.id,
-          projectId: m.projectId,
-          name: m.name,
-          value: m.value.toString(),
-          currency: m.currency,
-          plannedDate: m.plannedDate.toISOString().slice(0, 10),
-          signedOffDate: m.signedOffDate ? m.signedOffDate.toISOString().slice(0, 10) : null,
-        })),
-        timeLogs: timeLogEntries,
-        costRates,
-        tripCosts,
-        otherExpenses,
-        otherDirectCosts: [],
-      });
-
+      const pnl = await this.computePnl(p);
       out.push({
         id: p.id,
         code: p.code,
@@ -273,6 +212,129 @@ export class DashboardsService {
         cost: pnl.cost.amount,
         grossProfit: pnl.grossProfit.amount,
         marginPercent: pnl.marginPercent,
+      });
+    }
+    return out;
+  }
+
+  /** Shared per-project P&L computation (used by portfolio + budget worklist). */
+  private async computePnl(p: {
+    id: string;
+    contractCurrency: string;
+    billingModel: PrismaProject['billingModel'];
+    contractValue: Decimal;
+    milestones: PrismaMilestone[];
+  }) {
+    const timeLogs = await this.prisma.timeLog.findMany({
+      where: { task: { projectId: p.id, deletedAt: null } },
+      include: { user: { select: { gradeId: true } } },
+    });
+    const timeLogEntries: TimeLogEntry[] = timeLogs
+      .filter((l) => l.user.gradeId !== null)
+      .map((l) => ({
+        gradeId: l.user.gradeId!,
+        date: l.date.toISOString().slice(0, 10),
+        hours: Number(l.hours.toString()),
+      }));
+    const costRates: EffectiveCostRate[] = (
+      await this.prisma.costRate.findMany({
+        where: { gradeId: { in: Array.from(new Set(timeLogEntries.map((l) => l.gradeId))) } },
+      })
+    ).map((c) => ({
+      gradeId: c.gradeId,
+      ratePerDay: c.ratePerDay.toString(),
+      currency: c.currency,
+      effectiveFrom: c.effectiveFrom.toISOString().slice(0, 10),
+    }));
+
+    const trips = await this.prisma.trip.findMany({
+      where: { travelRequest: { projectId: p.id, status: { in: ['CLOSED', 'COMPLETED'] } } },
+    });
+    const tripCosts = trips.map((t) => ({
+      travel: t.travelActualCost.toString(),
+      lodging: t.lodgingActualCost.toString(),
+      da: (t.daAmount ?? new Decimal(0)).toString(),
+      localConveyance: t.localConveyanceActualCost.toString(),
+      currency: t.daCurrency ?? p.contractCurrency,
+    }));
+
+    const expenses = await this.prisma.expense.findMany({
+      where: { projectId: p.id, status: { in: ['APPROVED', 'REIMBURSED'] }, deletedAt: null },
+    });
+    const otherExpenses = expenses
+      .filter((e) => e.currency === p.contractCurrency)
+      .map((e) => ({ amount: e.amount.toString(), currency: e.currency }));
+
+    return calculatePnl({
+      reportingCurrency: p.contractCurrency,
+      billingModel: p.billingModel,
+      contractValue: p.contractValue.toString(),
+      milestones: p.milestones.map((m) => ({
+        id: m.id,
+        projectId: m.projectId,
+        name: m.name,
+        value: m.value.toString(),
+        currency: m.currency,
+        plannedDate: m.plannedDate.toISOString().slice(0, 10),
+        signedOffDate: m.signedOffDate ? m.signedOffDate.toISOString().slice(0, 10) : null,
+      })),
+      timeLogs: timeLogEntries,
+      costRates,
+      tripCosts,
+      otherExpenses,
+      otherDirectCosts: [],
+    });
+  }
+
+  /**
+   * Projects whose budget is unreliable — the admin worklist to fix so the
+   * banners clear: no contract value (MISSING) or a break-even placeholder
+   * seeded at import (PLACEHOLDER). Each row carries current cost so the admin
+   * knows the floor a real contract value must clear.
+   */
+  async budgetWorklist(): Promise<
+    Array<{
+      id: string;
+      code: string;
+      name: string;
+      status: string;
+      issue: 'MISSING' | 'PLACEHOLDER';
+      contractValue: string;
+      contractCurrency: string;
+      cost: string;
+    }>
+  > {
+    const placeholderTags = await this.prisma.auditLog.findMany({
+      where: { entity: 'Project', action: 'BUDGET_PLACEHOLDER' },
+      select: { entityId: true },
+    });
+    const placeholderIds = new Set(placeholderTags.map((t) => t.entityId));
+
+    const projects = await this.prisma.project.findMany({
+      where: {
+        deletedAt: null,
+        code: { not: 'WW-UNASSIGNED' },
+        OR: [{ contractValue: 0 }, { id: { in: Array.from(placeholderIds) } }],
+      },
+      include: { milestones: true },
+      orderBy: [{ code: 'asc' }],
+    });
+
+    const out = [];
+    for (const p of projects) {
+      const isPlaceholder = placeholderIds.has(p.id);
+      // A placeholder always has a (seeded) contractValue > 0; missing is 0.
+      const issue: 'MISSING' | 'PLACEHOLDER' = isPlaceholder ? 'PLACEHOLDER' : 'MISSING';
+      const pnl = await this.computePnl(p);
+      out.push({
+        id: p.id,
+        code: p.code,
+        name: p.name,
+        status: p.status,
+        issue,
+        contractValue: p.contractValue.toString(),
+        contractCurrency: p.contractCurrency,
+        cost: pnl.cost.amount,
       });
     }
     return out;
