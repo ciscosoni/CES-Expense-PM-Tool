@@ -88,7 +88,13 @@ export class DashboardsService {
 
   async portfolio(): Promise<PortfolioRow[]> {
     const projects = await this.prisma.project.findMany({
-      where: { deletedAt: null, status: { in: ['ACTIVE', 'ON_HOLD', 'CLOSED'] } },
+      where: {
+        deletedAt: null,
+        status: { in: ['ACTIVE', 'ON_HOLD', 'CLOSED'] },
+        // Exclude the migration overhead/G&A bucket — it holds non-project
+        // expenses (rent, salaries, petty cash) that must not skew project P&L.
+        code: { not: 'WW-UNASSIGNED' },
+      },
       include: { milestones: true },
       orderBy: [{ status: 'asc' }, { plannedStart: 'desc' }],
     });
