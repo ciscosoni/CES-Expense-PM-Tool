@@ -36,7 +36,6 @@ import { formatMoney } from '@/lib/format';
 import type {
   BillingModel,
   OnboardingCommitResponse,
-  OnboardingGenerateResponse,
   OnboardingPlan,
   ProjectCategory,
 } from '@/lib/types';
@@ -108,22 +107,61 @@ export default function OnboardWizardPage() {
   const [sourceText, setSourceText] = React.useState('');
   const [plan, setPlan] = React.useState<OnboardingPlan | null>(null);
   const [source, setSource] = React.useState<'claude' | 'mock' | null>(null);
+  const [streaming, setStreaming] = React.useState(false);
+  const [streamText, setStreamText] = React.useState('');
 
-  const generate = useMutation({
-    mutationFn: (text: string) =>
-      api.post<OnboardingGenerateResponse>('/ai/project-onboard/generate', {
-        sourceText: text,
-      }),
-    onSuccess: (data) => {
-      setPlan(data.plan);
-      setSource(data.source);
-      setStep('review');
-      toast.success(
-        data.source === 'claude' ? 'Claude drafted your plan' : 'Mock plan ready for review',
-      );
-    },
-    onError: (e: unknown) => toast.error(e instanceof ApiError ? e.message : String(e)),
-  });
+  /**
+   * Streaming generate: reads the SSE response token-by-token so the draft
+   * appears live, then switches to the review step with the validated plan.
+   */
+  async function runGenerate(text: string) {
+    setStreaming(true);
+    setStreamText('');
+    try {
+      const res = await fetch('/api/ai/project-onboard/generate/stream', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ sourceText: text }),
+      });
+      if (!res.ok || !res.body) {
+        const msg = await res.text().catch(() => '');
+        throw new Error(msg || `Generation failed (${res.status})`);
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let acc = '';
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const frames = buffer.split('\n\n');
+        buffer = frames.pop() ?? ''; // keep the trailing partial frame
+        for (const frame of frames) {
+          const line = frame.split('\n').find((l) => l.startsWith('data:'));
+          if (!line) continue;
+          const evt = JSON.parse(line.slice(5).trim());
+          if (evt.type === 'delta') {
+            acc += evt.text;
+            setStreamText(acc.slice(-1200)); // show the trailing window
+          } else if (evt.type === 'done') {
+            setPlan(evt.plan);
+            setSource(evt.source);
+            setStep('review');
+            toast.success(
+              evt.source === 'claude' ? 'Claude drafted your plan' : 'Mock plan ready for review',
+            );
+          } else if (evt.type === 'error') {
+            throw new Error(evt.message);
+          }
+        }
+      }
+    } catch (e: unknown) {
+      toast.error(e instanceof ApiError ? e.message : e instanceof Error ? e.message : String(e));
+    } finally {
+      setStreaming(false);
+    }
+  }
 
   const commit = useMutation({
     mutationFn: (p: OnboardingPlan) =>
@@ -156,8 +194,9 @@ export default function OnboardWizardPage() {
           <InputStep
             sourceText={sourceText}
             onSourceTextChange={setSourceText}
-            onGenerate={() => generate.mutate(sourceText)}
-            generating={generate.isPending}
+            onGenerate={() => runGenerate(sourceText)}
+            generating={streaming}
+            streamText={streamText}
           />
         )}
         {step === 'review' && plan && (
@@ -252,11 +291,13 @@ function InputStep({
   onSourceTextChange,
   onGenerate,
   generating,
+  streamText,
 }: {
   sourceText: string;
   onSourceTextChange: (s: string) => void;
   onGenerate: () => void;
   generating: boolean;
+  streamText: string;
 }) {
   const tooShort = sourceText.trim().length < 40;
   return (
@@ -302,6 +343,18 @@ function InputStep({
               )}
             </Button>
           </div>
+
+          {generating && (
+            <div className="rounded-lg border border-[hsl(var(--ai-via)/0.35)] bg-muted/20 p-3">
+              <p className="mb-1.5 flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                <Sparkles className="h-3 w-3 animate-pulse text-[hsl(var(--ai-via))]" /> Drafting live
+              </p>
+              <pre className="max-h-40 overflow-hidden whitespace-pre-wrap break-words font-mono text-[11px] leading-relaxed text-foreground/80">
+                {streamText || 'Connecting…'}
+                <span className="ml-0.5 inline-block h-3 w-1.5 animate-pulse bg-[hsl(var(--ai-via))] align-middle" />
+              </pre>
+            </div>
+          )}
         </CardContent>
       </Card>
 

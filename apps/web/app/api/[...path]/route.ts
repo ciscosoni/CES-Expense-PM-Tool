@@ -48,7 +48,6 @@ async function forward(req: NextRequest, params: Promise<{ path: string[] }>): P
   }
 
   const upstream = await fetch(targetUrl, init);
-  const buf = await upstream.arrayBuffer();
 
   const respHeaders = new Headers();
   upstream.headers.forEach((v, k) => {
@@ -57,6 +56,14 @@ async function forward(req: NextRequest, params: Promise<{ path: string[] }>): P
       respHeaders.set(k, v);
     }
   });
+
+  // SSE: pass the body through as a live stream instead of buffering it, so
+  // token-by-token responses (the onboarding wizard) actually stream.
+  if (upstream.headers.get('content-type')?.includes('text/event-stream')) {
+    return new NextResponse(upstream.body, { status: upstream.status, headers: respHeaders });
+  }
+
+  const buf = await upstream.arrayBuffer();
   return new NextResponse(buf, { status: upstream.status, headers: respHeaders });
 }
 

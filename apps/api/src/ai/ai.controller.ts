@@ -1,4 +1,5 @@
-import { Body, Controller, Post, UsePipes } from '@nestjs/common';
+import { Body, Controller, Post, Res, UsePipes } from '@nestjs/common';
+import type { Response } from 'express';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, Roles, type AuthedUser } from '../auth/index.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
@@ -26,6 +27,28 @@ export class AiController {
   })
   generate(@Body() body: GenerateOnboardingDto) {
     return this.ai.generateOnboarding(body);
+  }
+
+  @Post('project-onboard/generate/stream')
+  @Roles('ADMIN', 'PROJECT_OWNER', 'PROJECT_MANAGER')
+  @ApiOperation({
+    summary: 'Streaming (SSE) variant of generate — token deltas then the final plan.',
+  })
+  async generateStream(@Body() body: GenerateOnboardingDto, @Res() res: Response): Promise<void> {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache, no-transform');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders?.();
+    try {
+      for await (const event of this.ai.streamOnboarding(body)) {
+        res.write(`data: ${JSON.stringify(event)}\n\n`);
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'stream error';
+      res.write(`data: ${JSON.stringify({ type: 'error', message })}\n\n`);
+    } finally {
+      res.end();
+    }
   }
 
   @Post('project-onboard/commit')

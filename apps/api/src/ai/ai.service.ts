@@ -168,6 +168,82 @@ export class AiService {
     }
   }
 
+  /**
+   * Streaming variant of {@link generateOnboarding} (P5). Yields token deltas as
+   * the plan is generated, then a final validated plan — so the wizard shows the
+   * draft appear live instead of a long blank wait. Mock streams a short
+   * narration then the deterministic plan.
+   */
+  async *streamOnboarding(input: {
+    sourceText: string;
+    hints?: Record<string, string | undefined> | undefined;
+  }): AsyncGenerator<
+    | { type: 'status'; message: string }
+    | { type: 'delta'; text: string }
+    | { type: 'done'; plan: OnboardingPlan; source: 'claude' | 'mock' }
+    | { type: 'error'; message: string }
+  > {
+    const ctx = await this.gatherContext();
+
+    if (!this.client) {
+      const plan = this.mockPlan(input.sourceText, ctx);
+      yield { type: 'status', message: 'Drafting (mock — no API key)…' };
+      // Simulate token streaming so the UI plumbing is exercised end-to-end.
+      for (const word of plan.scopeSummary.split(' ')) {
+        yield { type: 'delta', text: word + ' ' };
+      }
+      yield { type: 'done', plan, source: 'mock' };
+      return;
+    }
+
+    const params = {
+      model: this.model,
+      max_tokens: 16_000,
+      thinking: { type: 'adaptive' as const },
+      output_config: {
+        effort: 'high',
+        format: { type: 'json_schema', schema: this.jsonSchema() },
+      },
+      system: [
+        {
+          type: 'text' as const,
+          text: this.systemPrompt(ctx),
+          cache_control: { type: 'ephemeral' as const },
+        },
+      ],
+      messages: [{ role: 'user' as const, content: this.userPrompt(input.sourceText, input.hints) }],
+    } satisfies Record<string, unknown>;
+
+    try {
+      const stream = this.client.messages.stream(
+        params as unknown as Anthropic.Messages.MessageCreateParamsStreaming,
+      );
+      for await (const event of stream) {
+        if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+          yield { type: 'delta', text: event.delta.text };
+        }
+      }
+      const final = await stream.finalMessage();
+      const parsed = OnboardingPlanSchema.safeParse(
+        this.safeParseJson(this.extractText(final)),
+      );
+      if (!parsed.success) {
+        yield { type: 'error', message: 'The AI returned a plan that failed validation.' };
+        return;
+      }
+      yield { type: 'done', plan: parsed.data, source: 'claude' };
+    } catch (err) {
+      const message =
+        err instanceof Anthropic.APIError
+          ? `Anthropic API error (${err.status}).`
+          : err instanceof Error
+            ? err.message
+            : 'Streaming failed.';
+      this.logger.error(`streamOnboarding failed: ${message}`);
+      yield { type: 'error', message };
+    }
+  }
+
   /** Apply the (possibly user-edited) plan to the database in one transaction. */
   async commitOnboarding(plan: OnboardingPlan, actor: AuthedUser) {
     const ctx = await this.gatherContext();
