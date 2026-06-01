@@ -1,12 +1,13 @@
 import { ArrowRight, Camera, MapPin, ShieldCheck, Sparkles } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { loginAsDevUser } from '@/lib/actions/auth';
-import { serverFetch } from '@/lib/server-api';
 import { isEntraConfigured } from '@/lib/msal';
 import { MsalLoginButton } from '@/components/msal-login-button';
-import type { AuthedUser } from '@/lib/types';
 
 export const dynamic = 'force-dynamic';
+
+/** Dev convenience login — single admin account. Real users sign in with Microsoft. */
+const DEV_ADMIN_EMAIL = process.env.NEXT_PUBLIC_DEV_ADMIN_EMAIL || 'admin@cestech.in';
 
 const PRINCIPLES = [
   {
@@ -26,25 +27,7 @@ const PRINCIPLES = [
   },
 ];
 
-function initials(name: string) {
-  return name
-    .split(' ')
-    .map((p) => p[0])
-    .filter(Boolean)
-    .slice(0, 2)
-    .join('')
-    .toUpperCase();
-}
-
-export default async function LoginPage() {
-  let users: AuthedUser[] = [];
-  let fetchError: string | null = null;
-  try {
-    users = await serverFetch<AuthedUser[]>('/users/dev-options');
-  } catch (err) {
-    fetchError = err instanceof Error ? err.message : String(err);
-  }
-
+export default function LoginPage() {
   return (
     <div className="grid min-h-screen lg:grid-cols-[1.05fr_0.95fr]">
       {/* Brand / story panel */}
@@ -128,86 +111,72 @@ export default async function LoginPage() {
           </div>
 
           <div className="reveal mb-6">
-            <h2 className="text-xl font-semibold tracking-tight">Welcome back</h2>
+            <h2 className="text-xl font-semibold tracking-tight">Sign in</h2>
             <p className="mt-1 text-sm text-muted-foreground">
-              {isEntraConfigured()
-                ? 'Sign in with your CES Tech Microsoft account.'
-                : 'Choose a seeded user to explore the tool from that role.'}
+              Use your CES Tech Microsoft account.
             </p>
           </div>
 
-          {isEntraConfigured() && (
-            <div className="reveal space-y-3">
+          {/* Primary: Microsoft Entra sign-in */}
+          <div className="reveal space-y-2">
+            {isEntraConfigured() ? (
               <MsalLoginButton />
-              <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                <span className="flex h-1.5 w-1.5 rounded-full bg-success" />
-                Secured by Microsoft Entra ID
-              </p>
-            </div>
-          )}
-
-          {!isEntraConfigured() && (
-            <>
-          {fetchError && (
-            <div className="reveal mb-4 rounded-lg border border-destructive/30 bg-destructive/10 p-3 text-xs text-destructive">
-              <p className="font-medium">
-                Couldn&apos;t reach the API at{' '}
-                {process.env.NEXT_PUBLIC_API_BASE_URL ?? 'http://localhost:4000'}.
-              </p>
-              <p className="mt-1">
-                Start it: <code className="font-mono">pnpm --filter @ces/api dev</code>
-              </p>
-            </div>
-          )}
-          {users.length === 0 && !fetchError && (
-            <p className="text-sm text-muted-foreground">
-              No seeded users. Run{' '}
-              <code className="font-mono">pnpm --filter @ces/api prisma:seed</code>.
+            ) : (
+              <button
+                type="button"
+                disabled
+                title="Microsoft Entra ID sign-in activates in production"
+                className="flex w-full cursor-not-allowed items-center justify-center gap-2 rounded-lg border border-border/70 bg-card/40 px-4 py-2.5 text-sm font-medium text-muted-foreground"
+              >
+                <MicrosoftMark /> Continue with Microsoft
+              </button>
+            )}
+            <p className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <span className="flex h-1.5 w-1.5 rounded-full bg-success" />
+              {isEntraConfigured()
+                ? 'Secured by Microsoft Entra ID'
+                : 'Microsoft Entra ID sign-in activates in production'}
             </p>
-          )}
+          </div>
 
-          <ul className="space-y-2">
-            {users.map((u, i) => (
-              <li key={u.id} className="reveal" style={{ ['--i' as string]: i + 1 }}>
-                <form action={loginAsDevUser}>
-                  <input type="hidden" name="email" value={u.email} />
-                  <button
-                    type="submit"
-                    className="lift group flex w-full items-center justify-between gap-3 rounded-xl border border-border/70 bg-card/50 px-4 py-3 text-left backdrop-blur transition-colors hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    <div className="flex min-w-0 items-center gap-3">
-                      <span className="brand-surface grid h-10 w-10 shrink-0 place-items-center rounded-full text-xs font-semibold text-white ring-1 ring-border/60">
-                        {initials(u.displayName)}
-                      </span>
-                      <div className="min-w-0">
-                        <p className="truncate text-sm font-medium">{u.displayName}</p>
-                        <p className="truncate text-xs text-muted-foreground">{u.email}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <div className="hidden flex-wrap justify-end gap-1 sm:flex">
-                        {u.roles.map((r) => (
-                          <Badge key={r} variant="secondary" className="text-[10px]">
-                            {r.replace('_', ' ')}
-                          </Badge>
-                        ))}
-                      </div>
-                      <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground/50 transition-all group-hover:translate-x-0.5 group-hover:text-primary" />
-                    </div>
-                  </button>
-                </form>
-              </li>
-            ))}
-          </ul>
-
-          <p className="mt-6 flex items-center gap-1.5 text-[11px] text-muted-foreground">
-            <span className="flex h-1.5 w-1.5 rounded-full bg-success" />
-            Dev mode · {users.length} seeded {users.length === 1 ? 'user' : 'users'}
-          </p>
-            </>
-          )}
+          {/* Dev-only admin shortcut */}
+          <div className="reveal mt-6 border-t border-border/50 pt-5" style={{ ['--i' as string]: 2 }}>
+            <form action={loginAsDevUser}>
+              <input type="hidden" name="email" value={DEV_ADMIN_EMAIL} />
+              <button
+                type="submit"
+                className="lift group flex w-full items-center justify-between gap-3 rounded-xl border border-border/70 bg-card/50 px-4 py-3 text-left backdrop-blur transition-colors hover:border-primary/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                <div className="flex items-center gap-3">
+                  <span className="brand-surface grid h-10 w-10 shrink-0 place-items-center rounded-full text-xs font-semibold text-white ring-1 ring-border/60">
+                    AD
+                  </span>
+                  <div>
+                    <p className="text-sm font-medium">Continue as Admin</p>
+                    <p className="text-xs text-muted-foreground">Developer access · {DEV_ADMIN_EMAIL}</p>
+                  </div>
+                </div>
+                <ArrowRight className="h-4 w-4 shrink-0 text-muted-foreground/50 transition-all group-hover:translate-x-0.5 group-hover:text-primary" />
+              </button>
+            </form>
+            <p className="mt-3 flex items-center gap-1.5 text-[11px] text-muted-foreground">
+              <span className="flex h-1.5 w-1.5 rounded-full bg-success" />
+              Dev mode shortcut — disabled once Microsoft sign-in is live.
+            </p>
+          </div>
         </div>
       </div>
     </div>
+  );
+}
+
+function MicrosoftMark() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 21 21" aria-hidden className="shrink-0">
+      <rect x="1" y="1" width="9" height="9" fill="#f25022" />
+      <rect x="11" y="1" width="9" height="9" fill="#7fba00" />
+      <rect x="1" y="11" width="9" height="9" fill="#00a4ef" />
+      <rect x="11" y="11" width="9" height="9" fill="#ffb900" />
+    </svg>
   );
 }
