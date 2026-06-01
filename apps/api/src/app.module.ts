@@ -37,6 +37,7 @@ import { StorageModule } from './storage/storage.module.js';
 import { NotificationsModule } from './notifications/notifications.module.js';
 import { SchedulerModule } from './scheduler/scheduler.module.js';
 import { AgentsModule } from './agents/agents.module.js';
+import { ReportsModule } from './reports/reports.module.js';
 
 const isProd = process.env.NODE_ENV === 'production';
 
@@ -115,6 +116,7 @@ const isProd = process.env.NODE_ENV === 'production';
     NotificationsModule,
     SchedulerModule,
     AgentsModule,
+    ReportsModule,
   ],
   controllers: [HealthController],
   providers: [
