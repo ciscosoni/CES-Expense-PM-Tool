@@ -138,6 +138,7 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
     items: [
       { href: '/admin/grades', label: 'Grades', icon: Settings2, roles: ['ADMIN'] },
       { href: '/admin/cost-rates', label: 'Cost rates', icon: Settings2, roles: ['ADMIN'] },
+      { href: '/admin/bill-rates', label: 'Bill rates', icon: Settings2, roles: ['ADMIN'] },
       { href: '/admin/cities', label: 'Cities', icon: Globe2, roles: ['ADMIN'] },
       {
         href: '/admin/entitlement-matrix',

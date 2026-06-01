@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import {
   calculatePnl,
+  type EffectiveBillRate,
   type EffectiveCostRate,
   type PnlResult,
   type TimeLogEntry,
@@ -40,19 +41,23 @@ export class PnlService {
         gradeId: l.user.gradeId!,
         date: l.date.toISOString().slice(0, 10),
         hours: Number(l.hours.toString()),
+        billable: l.billable,
       }));
 
-    const costRates: EffectiveCostRate[] = (
-      await this.prisma.costRate.findMany({
-        // Only need rates for grades present in this project's time logs.
-        where: { gradeId: { in: Array.from(new Set(timeLogEntries.map((l) => l.gradeId))) } },
-      })
-    ).map((c) => ({
-      gradeId: c.gradeId,
-      ratePerDay: c.ratePerDay.toString(),
-      currency: c.currency,
-      effectiveFrom: c.effectiveFrom.toISOString().slice(0, 10),
-    }));
+    const gradeIds = Array.from(new Set(timeLogEntries.map((l) => l.gradeId)));
+    const mapRate = (r: { gradeId: string; ratePerDay: { toString(): string }; currency: string; effectiveFrom: Date }) => ({
+      gradeId: r.gradeId,
+      ratePerDay: r.ratePerDay.toString(),
+      currency: r.currency,
+      effectiveFrom: r.effectiveFrom.toISOString().slice(0, 10),
+    });
+
+    const [costRows, billRows] = await Promise.all([
+      this.prisma.costRate.findMany({ where: { gradeId: { in: gradeIds } } }),
+      this.prisma.billRate.findMany({ where: { gradeId: { in: gradeIds } } }),
+    ]);
+    const costRates: EffectiveCostRate[] = costRows.map(mapRate);
+    const billRates: EffectiveBillRate[] = billRows.map(mapRate);
 
     return calculatePnl({
       reportingCurrency: project.contractCurrency,
@@ -69,6 +74,7 @@ export class PnlService {
       })),
       timeLogs: timeLogEntries,
       costRates,
+      billRates,
       tripCosts: [], // wired in Slice 1C
       otherExpenses: [], // wired in Slice 1C
       otherDirectCosts: [],

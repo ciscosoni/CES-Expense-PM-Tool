@@ -49,17 +49,14 @@ function parseDate(s: unknown): Date | null {
   return null;
 }
 function parseHours(tl: any): number {
-  let v = 0;
-  const timer = ht(tl.timer); // HH:MM:SS
-  const m = timer.match(/^(\d+):(\d{2}):(\d{2})$/);
-  if (m) v = +m[1] + +m[2] / 60 + +m[3] / 3600;
-  else {
-    const h = ht(tl.hours).match(/(\d+)\s*h/);
-    const mi = ht(tl.hours).match(/(\d+)\s*m/);
-    v = (h ? +h[1] : 0) + (mi ? +mi[1] : 0) / 60;
-  }
-  // hours is Decimal(5,2) → cap at 999.99 (runaway/active timers).
-  return Math.min(999.99, Math.max(0, Math.round(v * 100) / 100));
+  // The `hours` field ("2h 50m" / "5m" / "3h") is THIS log's real duration.
+  // `timer` is a cumulative/running counter — NOT this log's duration — so ignore it.
+  const s = ht(tl.hours) || ht(tl.hours_only).replace(/hrs?/i, 'h').replace(/mins?/i, 'm');
+  const h = s.match(/(\d+)\s*h/);
+  const mi = s.match(/(\d+)\s*m/);
+  const v = (h ? +h[1] : 0) + (mi ? +mi[1] : 0) / 60;
+  // Sanity cap: a single time log shouldn't exceed a day.
+  return Math.min(24, Math.max(0, Math.round(v * 100) / 100));
 }
 const cleanName = (s: unknown): string => ht(s).replace(/^(Mr|Ms|Mrs|Dr)\s+/i, '').trim();
 

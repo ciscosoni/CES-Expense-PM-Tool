@@ -70,6 +70,7 @@ model Grade {
   active          Boolean    @default(true)
   users           User[]
   costRates       CostRate[]
+  billRates       BillRate[]
   entitlementRows EntitlementMatrixRow[]
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
@@ -77,6 +78,19 @@ model Grade {
 }
 
 model CostRate {
+  id            String   @id @default(uuid()) @db.Uuid
+  gradeId       String   @db.Uuid
+  grade         Grade    @relation(fields: [gradeId], references: [id])
+  ratePerDay    Decimal  @db.Decimal(14, 4)
+  currency      String   @db.Char(3)
+  effectiveFrom DateTime @db.Date
+
+  @@index([gradeId, effectiveFrom])
+}
+
+/// Time-versioned bill rate per grade — what we charge the client (T&M revenue).
+/// Mirror of CostRate; P&L T&M revenue = Σ billable hours × bill rate (P9).
+model BillRate {
   id            String   @id @default(uuid()) @db.Uuid
   gradeId       String   @db.Uuid
   grade         Grade    @relation(fields: [gradeId], references: [id])
@@ -312,6 +326,8 @@ model TimeLog {
   user      User     @relation(fields: [userId], references: [id])
   date      DateTime @db.Date
   hours     Decimal  @db.Decimal(5, 2)
+  /// Whether this time is billable to the client (drives T&M revenue). P9.
+  billable  Boolean  @default(true)
   notes     String?
   createdAt DateTime @default(now())
 

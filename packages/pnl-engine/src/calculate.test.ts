@@ -173,3 +173,67 @@ describe('calculatePnl', () => {
     ).toThrow(/MILESTONE billing requires/);
   });
 });
+
+describe('calculatePnl — T&M revenue from bill rates (P9)', () => {
+  const billRate: EffectiveCostRate = {
+    gradeId: grade,
+    ratePerDay: '16000.00', // 2× cost rate
+    currency: 'INR',
+    effectiveFrom: '2024-01-01',
+  };
+  const base = {
+    reportingCurrency: 'INR' as const,
+    billingModel: 'T_AND_M' as const,
+    contractValue: '0.00',
+    costRates: [baseRate],
+    tripCosts: [],
+    otherExpenses: [],
+    otherDirectCosts: [],
+  };
+
+  it('revenue = Σ billable hours × bill rate', () => {
+    const res = calculatePnl({
+      ...base,
+      timeLogs: [
+        { gradeId: grade, date: '2025-03-10', hours: 8 }, // 1 day → 16000 rev / 8000 cost
+        { gradeId: grade, date: '2025-03-11', hours: 4 }, // 0.5 day → 8000 rev / 4000 cost
+      ],
+      billRates: [billRate],
+    });
+    expect(res.revenue.amount).toBe('24000.00');
+    expect(res.cost.amount).toBe('12000.00');
+    expect(res.grossProfit.amount).toBe('12000.00');
+    expect(res.marginPercent).toBeCloseTo(50, 2);
+  });
+
+  it('excludes non-billable time from revenue (but not from cost)', () => {
+    const res = calculatePnl({
+      ...base,
+      timeLogs: [
+        { gradeId: grade, date: '2025-03-10', hours: 8, billable: true }, // 16000 rev
+        { gradeId: grade, date: '2025-03-11', hours: 8, billable: false }, // 0 rev, 8000 cost
+      ],
+      billRates: [billRate],
+    });
+    expect(res.revenue.amount).toBe('16000.00');
+    expect(res.cost.amount).toBe('16000.00'); // both days cost
+  });
+
+  it('falls back to tmBillingTotal when no bill rates given', () => {
+    const res = calculatePnl({
+      ...base,
+      timeLogs: [{ gradeId: grade, date: '2025-03-10', hours: 8 }],
+      tmBillingTotal: '50000.00',
+    });
+    expect(res.revenue.amount).toBe('50000.00');
+  });
+
+  it('T&M with neither bill rates nor total → revenue 0 (no throw)', () => {
+    const res = calculatePnl({
+      ...base,
+      timeLogs: [{ gradeId: grade, date: '2025-03-10', hours: 8 }],
+    });
+    expect(res.revenue.amount).toBe('0.00');
+    expect(res.marginPercent).toBeNull();
+  });
+});

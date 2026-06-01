@@ -5,6 +5,7 @@ export type {
   PnlCostBreakdown,
   TimeLogEntry,
   EffectiveCostRate,
+  EffectiveBillRate,
   TripCostEntry,
   ExpenseEntry,
 } from './calculate.js';

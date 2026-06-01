@@ -20,12 +20,17 @@ export interface EffectiveCostRate {
   effectiveFrom: IsoDate;
 }
 
+/** Time-versioned bill rate per grade — what we charge the client (T&M). Same shape as cost rate. */
+export type EffectiveBillRate = EffectiveCostRate;
+
 export interface TimeLogEntry {
   /** The engineer's grade *as of the log date* — caller is responsible for resolving. */
   gradeId: Id;
   date: IsoDate;
   /** Hours worked. Converted to days at 8h/day for cost calc (configurable later). */
   hours: number;
+  /** Whether this time is billable to the client (T&M revenue). Defaults to true. */
+  billable?: boolean;
 }
 
 export interface TripCostEntry {
@@ -49,12 +54,14 @@ export interface PnlInput {
   contractValue: MoneyAmount;
   /** Required for MILESTONE — revenue = sum of signed-off milestones. */
   milestones?: readonly Milestone[];
-  /** Required for T_AND_M — engine sums hours × billRatePerDay (caller computes daily). */
+  /** T_AND_M fallback — used when `billRates` is not supplied. */
   tmBillingTotal?: MoneyAmount;
   /** All time logs against the project. */
   timeLogs: readonly TimeLogEntry[];
   /** All cost-rate rows; engine picks the row effective on each log date. */
   costRates: readonly EffectiveCostRate[];
+  /** Bill-rate rows (T_AND_M revenue = Σ billable hours × bill rate effective on log date). */
+  billRates?: readonly EffectiveBillRate[];
   /** Closed trips on the project (DA + travel + lodging + local conveyance). */
   tripCosts: readonly TripCostEntry[];
   /** Approved reimbursable expenses (not yet covered by a trip). */
@@ -127,10 +134,22 @@ export function calculatePnl(input: PnlInput): PnlResult {
       break;
     }
     case 'T_AND_M':
-      if (input.tmBillingTotal === undefined) {
-        throw new Error('PnL: T_AND_M billing requires `tmBillingTotal` input');
+      if (input.billRates && input.billRates.length > 0) {
+        // Revenue from billable time × bill rate effective on each log date.
+        for (const log of input.timeLogs) {
+          if (log.billable === false) continue;
+          const br = pickCostRate(input.billRates, log.gradeId, log.date);
+          if (br.currency !== input.reportingCurrency) {
+            throw new Error(
+              `PnL: bill rate currency ${br.currency} != reporting ${input.reportingCurrency}`,
+            );
+          }
+          revenue = revenue.plus(new Decimal(log.hours).div(hoursPerDay).mul(br.ratePerDay));
+        }
+      } else if (input.tmBillingTotal !== undefined) {
+        revenue = new Decimal(input.tmBillingTotal);
       }
-      revenue = new Decimal(input.tmBillingTotal);
+      // else: no bill rates and no total → revenue 0 (don't throw; keeps dashboards resilient).
       break;
   }
 

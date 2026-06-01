@@ -72,6 +72,14 @@ export interface CostRate {
   effectiveFrom: string;
 }
 
+export interface BillRate {
+  id: string;
+  gradeId: string;
+  ratePerDay: string;
+  currency: string;
+  effectiveFrom: string;
+}
+
 export interface EntitlementRow {
   id: string;
   gradeId: string;

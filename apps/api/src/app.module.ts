@@ -12,6 +12,7 @@ import { AuthModule } from './auth/auth.module.js';
 import { AuditModule } from './audit/audit.module.js';
 import { GradesModule } from './grades/grades.module.js';
 import { CostRatesModule } from './cost-rates/cost-rates.module.js';
+import { BillRatesModule } from './bill-rates/bill-rates.module.js';
 import { CitiesModule } from './cities/cities.module.js';
 import { EntitlementMatrixModule } from './entitlement-matrix/entitlement-matrix.module.js';
 import { DaPoliciesModule } from './da-policies/da-policies.module.js';
@@ -90,6 +91,7 @@ const isProd = process.env.NODE_ENV === 'production';
     // Master data
     GradesModule,
     CostRatesModule,
+    BillRatesModule,
     CitiesModule,
     EntitlementMatrixModule,
     DaPoliciesModule,
