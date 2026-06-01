@@ -36,8 +36,8 @@
 | Notifications (in-app / Teams / email) | 🟢 P3 shipped (notification fabric + topbar bell); Teams/email channels wire on via Graph |
 | Background scheduler (cron) | 🟢 P3 shipped (anomaly sweep + Graph sync on cron) |
 | Mobile app | 🟠 P4 MVP — 5 tabs, offline outbox, MSAL sign-in; bundles clean; not yet on devices/stores |
-| Reporting / BI / xlsx export | 🔴 coming-soon |
-| Integrations (Tally / SAP / payroll) | 🔴 absent |
+| Reporting / BI / xlsx export | 🟢 P7 shipped — 6 xlsx reports (P&L, utilization, reimbursements, attendance, travel, payslips) at /finance/reports |
+| Integrations (Tally / SAP / payroll) | 🟠 Tally reimbursement XML export shipped; SAP/payroll-sync + true bank-upload file (needs bank-detail fields) deferred with cloud |
 | Ambient AI / agents | 🟢 P5 (L1–L2) + P6 (L3) shipped — Ask-AI, auto-extraction, NL palette, streaming; agents: daily brief, anomaly-nudge, standup, suggest-only auto-approval |
 
 ---
@@ -53,7 +53,7 @@
 | **P4** | Mobile MVP | 🟠 MVP — bundles clean, not yet on devices/stores | L | iOS/Android app for field engineers |
 | **P5** | Ambient AI (L1–L2) | 🟢 shipped — Ask-AI, auto-extraction, NL palette, streaming | L | AI woven through every screen |
 | **P6** | Autonomous Agents (L3) | 🟢 shipped — daily brief, anomaly-nudge, standup digest; auto-approval is **suggest-only** (human-in-loop) | L | "Low human intervention" realized |
-| **P7** | Reporting & Integrations | 🔴 not started | L | Finance + leadership reporting; payroll sync |
+| **P7** | Reporting & Integrations | 🟢 core shipped — xlsx reporting + Tally export; Teams/Outlook + SAP deferred with cloud | L | Finance + leadership reporting; payroll sync |
 | **P8** | Predictive Intelligence (L4) | 🔴 not started | XL | Proactive, predictive ops |
 
 **Critical path:** P0 → P1 → P2/P3 (parallel) → P4 → P5 → P6. P7 and P8 can begin after P3 and P5 respectively.
@@ -180,19 +180,21 @@
 
 ---
 
-## P7 — Reporting, BI & Integrations
+## P7 — Reporting, BI & Integrations — core shipped ✅
 **Goal:** finance/leadership reporting + connect to the systems money actually flows through.
 
-**Scope**
-- **xlsx export everywhere** (non-negotiable #6) via `@ces/excel`: P&L, utilization, travel spend, attendance, reimbursement batches.
-- **Reports module** (the coming-soon page) + leadership BI views.
-- **Tally / SAP / payroll** export + sync (reimbursement bank files, payslip finalization/lock + PDF).
-- **Teams / Outlook** deep integration via Graph (calendar-aware travel, meeting-note ingestion).
+**Shipped** (`apps/api/src/reports/*` → `/finance/reports`, all built on the live dashboard/payslip computations via `@ces/excel`):
+- **xlsx everywhere** (non-negotiable #6): Portfolio P&L, Resource utilization, Reimbursement register, Attendance summary, Travel spend, Payslip register (`?period=`). Each served as an attachment through the auth proxy; numbers match the on-screen dashboards.
+- **Reports hub:** the coming-soon page is now a real download hub.
+- **Tally export:** `GET /reports/reimbursements-tally.xml` — Tally-importable XML payment vouchers (ledger names env-overridable). **Exit criterion met.**
 
-**Files/areas:** `apps/web/app/(app)/finance/reports`, `packages/excel`, new `apps/api/src/integrations/*`.
-**Gaps closed:** 🔴→🟢 Reporting + integrations.
-**Exit:** Finance exports a reimbursement bank file to Tally; leadership pulls any view as xlsx.
-**Value:** company = closes the loop to accounting/payroll; employee = payslip PDFs, faster payouts.
+**Deferred to the cloud/integration phase** (need a live tenant or external systems, so they ride with P0):
+- **Teams / Outlook** deep integration via Graph (calendar-aware travel, meeting-note ingestion).
+- **SAP / payroll sync** and a **true bank-upload file** (the latter needs bank-detail fields — account/IFSC — on `User`, not yet modelled).
+- **Payslip PDF + finalize/lock** (xlsx register ships now; PDF/lock is a follow-up).
+
+**Gaps closed:** 🔴→🟢 Reporting (xlsx); 🔴→🟠 Integrations (Tally done, rest deferred).
+**Value:** company = leadership pulls any view as xlsx + a Tally feed to accounting; employee = transparent payslip/reimbursement records.
 
 ---
 
