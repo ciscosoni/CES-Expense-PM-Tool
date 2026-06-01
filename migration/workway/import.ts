@@ -257,7 +257,7 @@ async function main() {
     const data: Prisma.ProjectCreateInput = {
       code, name, client: { connect: { id: clientId } },
       category: mapProjectCategory(name, ht((p.category ?? {}).category_name)) as any,
-      billingModel: 'T_AND_M', contractValue: budget ?? '0', contractCurrency: 'INR',
+      billingModel: 'FIXED_PRICE', contractValue: budget ?? '0', contractCurrency: 'INR',
       pm: { connect: { id: pmId } }, status: mapProjectStatus(ht(p.project_status)) as any,
       plannedStart: pStart, plannedEnd: pEnd,
       budget: budget, budgetCurrency: budget ? 'INR' : null,
@@ -277,7 +277,7 @@ async function main() {
       update: {},
       create: {
         code: 'WW-UNASSIGNED', name: 'Unassigned (Workway import)', client: { connect: { id: fallbackClientId } },
-        category: 'NON_ACI', billingModel: 'T_AND_M', contractValue: '0', contractCurrency: 'INR',
+        category: 'NON_ACI', billingModel: 'FIXED_PRICE', contractValue: '0', contractCurrency: 'INR',
         pm: { connect: { id: superAdmin.id } }, status: 'ACTIVE',
         plannedStart: new Date(), plannedEnd: new Date(Date.now() + 365 * 86_400_000),
       },
