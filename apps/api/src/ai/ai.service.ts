@@ -870,6 +870,38 @@ ${ROUTE_CATALOG.map((r) => `  - ${r.href} — ${r.label}: ${r.desc}`).join('\n')
     };
   }
 
+  /**
+   * Generic short-form narration for the autonomous agents (P6): given a system
+   * instruction + a facts block, return a few sentences. Falls back to the
+   * caller's deterministic text when no API key — so briefs/standups still
+   * publish without AI. Never throws; returns the fallback on any error.
+   */
+  async narrate(opts: {
+    system: string;
+    facts: string;
+    fallback: string;
+    maxTokens?: number;
+  }): Promise<string> {
+    if (!this.client) return opts.fallback;
+    try {
+      const params = {
+        model: this.model,
+        max_tokens: opts.maxTokens ?? 600,
+        system: [
+          { type: 'text' as const, text: opts.system, cache_control: { type: 'ephemeral' as const } },
+        ],
+        messages: [{ role: 'user' as const, content: opts.facts }],
+      } satisfies Record<string, unknown>;
+      const response = await this.client.messages.create(
+        params as unknown as Anthropic.Messages.MessageCreateParamsNonStreaming,
+      );
+      return this.extractText(response) || opts.fallback;
+    } catch (err) {
+      this.logger.warn(`narrate failed, using fallback: ${err instanceof Error ? err.message : err}`);
+      return opts.fallback;
+    }
+  }
+
   // ---------- Internals ----------
 
   private async gatherContext() {
