@@ -36,4 +36,11 @@ export class DashboardsController {
   anomalies() {
     return this.dashboards.anomalies();
   }
+
+  @Get('data-quality')
+  @Roles('ADMIN', 'PROJECT_OWNER', 'PROJECT_MANAGER', 'FINANCE')
+  @ApiOperation({ summary: 'Costs excluded from project P&L (overhead + unattributable) + projects missing budgets' })
+  dataQuality() {
+    return this.dashboards.dataQuality();
+  }
 }

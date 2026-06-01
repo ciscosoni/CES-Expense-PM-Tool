@@ -146,6 +146,18 @@ export default async function DashboardPage() {
       serverFetch<WellbeingRow[]>('/forecast/wellbeing').catch(() => [] as WellbeingRow[]),
     ]);
 
+  const dataQuality = await serverFetch<{
+    overheadExpenses: string;
+    unattributableEffort: string;
+    unattributableTimelogs: number;
+    projectsMissingBudget: number;
+  }>('/dashboards/data-quality').catch(() => null);
+  const showDataBanner =
+    dataQuality &&
+    (Number(dataQuality.overheadExpenses) > 0 ||
+      Number(dataQuality.unattributableEffort) > 0 ||
+      dataQuality.projectsMissingBudget > 0);
+
   const atRiskMargins = fcMargins.filter(
     (m) => m.trajectory === 'ERODING' || m.riskBand === 'CRITICAL' || m.riskBand === 'HIGH',
   );
@@ -162,6 +174,30 @@ export default async function DashboardPage() {
         </span>
       }
     >
+      {showDataBanner && dataQuality && (
+        <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-1 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-200">
+          <span className="flex items-center gap-1.5 font-medium">
+            <AlertTriangle className="h-3.5 w-3.5" /> Read margins in context — excluded from project P&amp;L:
+          </span>
+          {Number(dataQuality.overheadExpenses) > 0 && (
+            <span>
+              <span className="font-mono">{formatMoney(dataQuality.overheadExpenses)}</span> overhead / G&amp;A
+            </span>
+          )}
+          {Number(dataQuality.unattributableEffort) > 0 && (
+            <span>
+              <span className="font-mono">{formatMoney(dataQuality.unattributableEffort)}</span> unattributed effort
+              ({dataQuality.unattributableTimelogs} logs on deleted/project-less tasks)
+            </span>
+          )}
+          {dataQuality.projectsMissingBudget > 0 && (
+            <span>
+              <span className="font-mono">{dataQuality.projectsMissingBudget}</span> projects missing a budget
+            </span>
+          )}
+        </div>
+      )}
+
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <StatCard
           index={0}

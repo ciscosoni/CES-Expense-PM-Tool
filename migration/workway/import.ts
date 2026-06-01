@@ -121,11 +121,20 @@ const tick = (e: string, k: 'created' | 'skipped' | 'fallback', warn?: string) =
 };
 
 async function alreadyImported(entity: string): Promise<Set<string>> {
+  return new Set((await importedMap(entity)).keys());
+}
+/** Workway id → our id, for entities tagged WORKWAY_IMPORT (so re-runs keep FK maps). */
+async function importedMap(entity: string): Promise<Map<string, string>> {
   const rows = await prisma.auditLog.findMany({
     where: { entity, action: 'WORKWAY_IMPORT' },
-    select: { after: true },
+    select: { entityId: true, after: true },
   });
-  return new Set(rows.map((r) => String((r.after as any)?.wwId)).filter(Boolean));
+  const m = new Map<string, string>();
+  for (const r of rows) {
+    const ww = String((r.after as any)?.wwId ?? '');
+    if (ww) m.set(ww, r.entityId);
+  }
+  return m;
 }
 async function audit(entity: string, entityId: string, wwId: string | number, extra?: any) {
   if (!COMMIT) return;
@@ -284,8 +293,9 @@ async function main() {
 
   // ---- 4. TASKS ----
   const tasks = load('tasks');
-  const wwTaskToId = new Map<string, string>();
-  const doneTasks = await alreadyImported('Task');
+  // Seed the map from already-imported tasks so re-runs keep the timelog FK links.
+  const wwTaskToId = await importedMap('Task');
+  const doneTasks = new Set(wwTaskToId.keys());
   for (const t of tasks) {
     if (doneTasks.has(String(t.id))) { tick('Task', 'skipped'); continue; }
     const wwProj = String((t.project ?? {}).id ?? '');

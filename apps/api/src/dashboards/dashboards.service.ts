@@ -45,6 +45,52 @@ export interface LeadershipKpis {
 export class DashboardsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Data-completeness signals so the portfolio margin is read in context — costs
+   * excluded from project P&L because they can't be attributed (overhead + work
+   * on deleted/project-less Workway tasks), and projects lacking a budget.
+   */
+  async dataQuality(): Promise<{
+    overheadExpenses: string;
+    unattributableEffort: string;
+    unattributableTimelogs: number;
+    projectsMissingBudget: number;
+  }> {
+    const overhead = await this.prisma.project.findFirst({
+      where: { code: 'WW-UNASSIGNED' },
+      select: { id: true },
+    });
+    if (!overhead) {
+      return { overheadExpenses: '0', unattributableEffort: '0', unattributableTimelogs: 0, projectsMissingBudget: 0 };
+    }
+    const [expAgg, logs, missingBudget] = await Promise.all([
+      this.prisma.expense.aggregate({
+        where: { projectId: overhead.id, status: { in: ['APPROVED', 'REIMBURSED'] }, deletedAt: null },
+        _sum: { amount: true },
+      }),
+      this.prisma.timeLog.findMany({
+        where: { task: { projectId: overhead.id } },
+        include: { user: { select: { gradeId: true } } },
+      }),
+      this.prisma.project.count({ where: { contractValue: 0, code: { not: 'WW-UNASSIGNED' }, deletedAt: null } }),
+    ]);
+    const grades = Array.from(new Set(logs.map((l) => l.user.gradeId).filter((g): g is string => !!g)));
+    const rates = new Map(
+      (await this.prisma.costRate.findMany({ where: { gradeId: { in: grades } } })).map((c) => [c.gradeId, new Decimal(c.ratePerDay)]),
+    );
+    let effort = new Decimal(0);
+    for (const l of logs) {
+      const r = l.user.gradeId ? rates.get(l.user.gradeId) : undefined;
+      if (r) effort = effort.plus(new Decimal(l.hours).div(8).mul(r));
+    }
+    return {
+      overheadExpenses: (expAgg._sum.amount ?? new Decimal(0)).toFixed(2),
+      unattributableEffort: effort.toFixed(2),
+      unattributableTimelogs: logs.length,
+      projectsMissingBudget: missingBudget,
+    };
+  }
+
   async kpis(): Promise<LeadershipKpis> {
     const [activeProjects, pendingTravelApprovals, pendingExpenseApprovals, pendingReimb, flagged] =
       await Promise.all([
