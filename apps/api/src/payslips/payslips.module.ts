@@ -5,5 +5,6 @@ import { PayslipsService } from './payslips.service.js';
 @Module({
   controllers: [PayslipsController],
   providers: [PayslipsService],
+  exports: [PayslipsService],
 })
 export class PayslipsModule {}

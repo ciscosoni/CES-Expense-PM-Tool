@@ -3,6 +3,7 @@ import { Decimal } from '@prisma/client/runtime/library';
 import { exportRowsToBuffer } from '@ces/excel';
 import { PrismaService } from '../prisma.service.js';
 import { DashboardsService } from '../dashboards/dashboards.service.js';
+import { PayslipsService } from '../payslips/payslips.service.js';
 
 /**
  * P7 reporting. Every report is .xlsx (non-negotiable #6) via @ces/excel, built
@@ -14,7 +15,46 @@ export class ReportsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly dashboards: DashboardsService,
+    private readonly payslips: PayslipsService,
   ) {}
+
+  /** Payslip register for a period (default current month) — one row per employee. */
+  async payslipRegisterXlsx(period?: string): Promise<Buffer> {
+    const now = new Date();
+    const p =
+      period && /^\d{4}-\d{2}$/.test(period)
+        ? period
+        : `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}`;
+    const users = await this.payslips.listUsersForPeriod();
+    const rows = [];
+    for (const u of users) {
+      const d = await this.payslips.derive(u.id, p);
+      rows.push({
+        name: d.user.displayName,
+        email: d.user.email,
+        period: p,
+        effort: d.totals.earnedDaysCost,
+        da: d.totals.daEarned,
+        reimbursements: d.totals.reimbursements,
+        total: d.totals.grandTotal,
+        currency: d.currency,
+      });
+    }
+    return exportRowsToBuffer({
+      sheetName: `Payslips ${p}`,
+      columns: [
+        { header: 'Employee', key: 'name', width: 26 },
+        { header: 'Email', key: 'email', width: 30 },
+        { header: 'Period', key: 'period', width: 12 },
+        { header: 'Effort cost', key: 'effort', width: 16 },
+        { header: 'DA earned', key: 'da', width: 16 },
+        { header: 'Reimbursements', key: 'reimbursements', width: 16 },
+        { header: 'Grand total', key: 'total', width: 16 },
+        { header: 'Currency', key: 'currency', width: 10 },
+      ],
+      rows,
+    });
+  }
 
   /** Portfolio P&L — one row per project, with revenue/cost/GP/margin. */
   async portfolioPnlXlsx(): Promise<Buffer> {

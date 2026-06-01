@@ -1,4 +1,4 @@
-import { Controller, Get, Res } from '@nestjs/common';
+import { Controller, Get, Query, Res } from '@nestjs/common';
 import type { Response } from 'express';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Roles } from '../auth/index.js';
@@ -54,6 +54,13 @@ export class ReportsController {
   @ApiOperation({ summary: 'Travel spend (per trip, with cost breakdown) as .xlsx.' })
   async travelSpend(@Res() res: Response): Promise<void> {
     this.send(res, 'travel-spend.xlsx', await this.reports.travelSpendXlsx());
+  }
+
+  @Get('payslips.xlsx')
+  @Roles('ADMIN', 'FINANCE')
+  @ApiOperation({ summary: 'Payslip register for a period (?period=YYYY-MM, default current month) as .xlsx.' })
+  async payslips(@Res() res: Response, @Query('period') period?: string): Promise<void> {
+    this.send(res, 'payslips.xlsx', await this.reports.payslipRegisterXlsx(period));
   }
 
   @Get('reimbursements-tally.xml')

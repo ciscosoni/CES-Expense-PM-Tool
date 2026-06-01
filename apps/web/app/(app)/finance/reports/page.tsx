@@ -5,6 +5,7 @@ import {
   FileCode,
   IndianRupee,
   Plane,
+  Receipt,
   TrendingUp,
   Users,
 } from 'lucide-react';
@@ -52,6 +53,13 @@ const REPORTS: {
       'Per-trip cost breakdown — travel, lodging, DA and local conveyance — with totals for travel-budget review.',
     href: '/api/reports/travel-spend.xlsx',
     icon: <Plane className="h-5 w-5" />,
+  },
+  {
+    title: 'Payslip register',
+    description:
+      "This month's payslips per employee — effort cost, DA, reimbursements and grand total, each derived line-by-line.",
+    href: '/api/reports/payslips.xlsx',
+    icon: <Receipt className="h-5 w-5" />,
   },
   {
     title: 'Reimbursements → Tally',
