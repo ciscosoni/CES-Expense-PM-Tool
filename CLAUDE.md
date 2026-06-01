@@ -275,7 +275,7 @@ Roadmap shape (see the doc for each phase's scope):
 
 > Older commits/docs use `Phase 0–3` (the original product-brief plan); that scheme is **retired** in favour of `P0–P8`. They do not line up — `P#` ≠ `Phase #`.
 
-**Where it stands (2026-06):** core web workflows, the calc engines, the design system, and the AI onboarding wizard are functional. Shipped: `P2` evidence layer, `P3` scheduler + notification fabric, `P4` mobile MVP (bundles clean), `P1` identity (dual-mode code-complete — Entra JWT + Graph sync + web/mobile MSAL; flips on with a real tenant, dev-header fallback for local), and **`P5` Ambient AI (L1–L2)** — Ask-AI drawer, email→expense auto-extraction, NL command palette, and a streaming onboarding wizard. Per the deployment memory, **`P0` go-live is the next priority** (gated on `az login` + Azure costs); autonomous agents (L3) are `P6`.
+**Where it stands (2026-06):** core web workflows, the calc engines, the design system, and the AI onboarding wizard are functional. Shipped: `P2` evidence layer, `P3` scheduler + notification fabric, `P4` mobile MVP (bundles clean), `P1` identity (dual-mode code-complete — Entra JWT + Graph sync + web/mobile MSAL; flips on with a real tenant, dev-header fallback for local), **`P5` Ambient AI (L1–L2)** — Ask-AI drawer, email→expense auto-extraction, NL command palette, streaming onboarding wizard — and **`P6` Autonomous Agents (L3)** — daily brief, anomaly-nudge, standup digest, and a **suggest-only** auto-approval evaluator (human still clicks Approve). Remaining: **`P0` go-live** (gated on `az login` + Azure costs) and `P7`/`P8`; per the user, P0 + cloud deployment come last.
 
 ### Shipped surfaces worth knowing (routes/endpoints/state not documented elsewhere)
 
@@ -290,6 +290,7 @@ Roadmap shape (see the doc for each phase's scope):
 - **Auto-extraction (P5)** — `POST /ai/extract-expense {text}` turns a pasted email/message/bill into a structured expense draft (grounds the project guess in active projects); surfaced as a "paste an email/message" affordance in the New Expense dialog.
 - **NL command palette (P5)** — `POST /ai/command {query}` returns a short answer + ≤3 route suggestions (hrefs constrained to a catalog). Read-only — routes/answers, never mutates (autonomous actions are P6). Wired into the ⌘K palette (Enter to ask).
 - **Streaming onboarding (P5)** — `POST /ai/project-onboard/generate/stream` (SSE) streams `status`→text deltas→final plan; the proxy (`app/api/[...path]`) passes `text/event-stream` through un-buffered; the wizard renders the draft live.
+- **Autonomous agents (P6)** — `apps/api/src/agents/*`, self-scheduled via `@Cron` (gated by `SCHEDULER_DISABLED`), each runnable on demand at `POST /agents/{daily-brief,anomaly-nudge,standup}/run`. AI-narrated via `AiService.narrate()` with deterministic fallbacks. **Auto-approval is suggest-only**: admin-editable `AutoApprovalPolicy` + `GET /agents/auto-approval/suggestions` surface clean expenses (badged in the expense inbox) for one-click human approval — the agent never changes status.
 - **Automation** — `apps/api/src/scheduler` (cron heartbeat) + `apps/api/src/notifications` (delivery channels) + web topbar notification bell.
 - **Payslip + Approvals** — line-by-line payslip derivation (traceable to source); central Approvals hub with SLA timers.
 

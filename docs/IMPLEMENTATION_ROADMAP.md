@@ -38,7 +38,7 @@
 | Mobile app | 🟠 P4 MVP — 5 tabs, offline outbox, MSAL sign-in; bundles clean; not yet on devices/stores |
 | Reporting / BI / xlsx export | 🔴 coming-soon |
 | Integrations (Tally / SAP / payroll) | 🔴 absent |
-| Ambient AI / agents | 🟢 P5 (L1–L2) shipped — Ask-AI drawer, email→expense auto-extraction, NL command palette, streaming wizard; autonomous agents (L3) are P6 |
+| Ambient AI / agents | 🟢 P5 (L1–L2) + P6 (L3) shipped — Ask-AI, auto-extraction, NL palette, streaming; agents: daily brief, anomaly-nudge, standup, suggest-only auto-approval |
 
 ---
 
@@ -52,7 +52,7 @@
 | **P3** | Automation Heartbeat | 🟢 shipped | M | Background jobs + alerts that reach people |
 | **P4** | Mobile MVP | 🟠 MVP — bundles clean, not yet on devices/stores | L | iOS/Android app for field engineers |
 | **P5** | Ambient AI (L1–L2) | 🟢 shipped — Ask-AI, auto-extraction, NL palette, streaming | L | AI woven through every screen |
-| **P6** | Autonomous Agents (L3) | 🔴 not started | L | "Low human intervention" realized |
+| **P6** | Autonomous Agents (L3) | 🟢 shipped — daily brief, anomaly-nudge, standup digest; auto-approval is **suggest-only** (human-in-loop) | L | "Low human intervention" realized |
 | **P7** | Reporting & Integrations | 🔴 not started | L | Finance + leadership reporting; payroll sync |
 | **P8** | Predictive Intelligence (L4) | 🔴 not started | XL | Proactive, predictive ops |
 
@@ -163,20 +163,20 @@
 
 ---
 
-## P6 — Autonomous Agents (Level 3) — the "low human intervention" payoff
+## P6 — Autonomous Agents (Level 3) — the "low human intervention" payoff ✅
 **Goal:** the system handles the routine; humans handle only the exceptions.
 
-**Scope**
-- **Auto-approval agent:** expenses that are clean (OCR matches entry, GPS in geofence, within entitlement, no duplicate, under threshold) auto-approve; only ambiguous ones reach a human.
-- **Daily-standup agent:** roll up task updates → PM digest → leadership digest, auto-written (CLAUDE.md's unbuilt "daily standup auto-publish").
-- **Anomaly + nudge agent:** nightly sweep (from P3) → notify the right owner with a recommended action.
-- **AI daily brief:** each leader/PM gets a morning brief (projects trending red, approvals breaching SLA, reimbursement due).
-- Guardrails: every agent action writes an `AuditLog`; thresholds admin-configurable; humans can override.
+**Shipped** (`apps/api/src/agents/*`, self-scheduled via `@Cron` gated by `SCHEDULER_DISABLED`, each runnable on demand for verification):
+- **Auto-approval agent — SUGGEST-ONLY** (deliberate posture; see decision below): an admin-editable `AutoApprovalPolicy` (max amount + currency, require receipt, require no fraud flags) drives a clean-expense evaluator that surfaces eligible expenses for **one-click human approval** in the inbox. It never changes status itself — no money moves without a person.
+- **Daily-standup agent:** rolls up the latest activity day's time logs → per-project digest (PM + owner) → leadership roll-up, AI-written with deterministic fallback.
+- **Anomaly-nudge agent:** routes each open anomaly to the right owner (project owner / user's manager) with a rule-based recommended action; idempotent.
+- **AI daily brief:** each owner/PM/leader gets a morning brief (red-margin projects, aging approvals, open anomalies, pending reimbursements).
+- Guardrails: policy is admin-configurable (no hardcoded amounts); policy changes are audited; everything is notification/suggestion-only.
 
-**Files/areas:** `apps/api/src/ai/agents/*`, wire into scheduler (P3) + notifications (P3) + approval-engine.
-**Gaps closed:** 🔴→🟢 Autonomous automation.
-**Exit:** >70% of clean expenses auto-approve with full audit trail; standups and briefs publish without anyone writing them.
-**Value:** company = managers freed from rubber-stamping; employee = paid faster, less waiting.
+> **Decision (2026-06-01):** auto-approval ships **suggest-only** rather than autonomously approving. The evaluator + policy are built; a human still clicks Approve. Fully-autonomous approval can be enabled later by promoting the same evaluator — the guardrails (admin policy, audit) are already in place.
+
+**Gaps closed:** 🔴→🟢 Autonomous automation (L3, human-in-loop on money).
+**Value:** company = managers trust a pre-vetted queue + auto-published standups/briefs; employee = faster decisions, less chasing.
 
 ---
 
