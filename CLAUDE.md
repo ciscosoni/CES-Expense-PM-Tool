@@ -53,6 +53,7 @@ packages/
   pnl-engine/    Project P&L roll-up (pure, unit-tested)
   approval-engine/  Generic approval workflow engine
   evidence/      Pure evidence helpers (perceptual-hash, ocr-parse, geo) — fraud-flag math
+  forecast/      Pure predictive models (margin/utilization/spike/wellbeing) — P8
   excel/         xlsx import/export utilities
   config/        env loader + Azure Key Vault adapter
   tsconfig/      shared TypeScript configs
@@ -275,7 +276,7 @@ Roadmap shape (see the doc for each phase's scope):
 
 > Older commits/docs use `Phase 0–3` (the original product-brief plan); that scheme is **retired** in favour of `P0–P8`. They do not line up — `P#` ≠ `Phase #`.
 
-**Where it stands (2026-06):** core web workflows, the calc engines, the design system, and the AI onboarding wizard are functional. Shipped: `P2` evidence layer, `P3` scheduler + notification fabric, `P4` mobile MVP (bundles clean), `P1` identity (dual-mode code-complete — Entra JWT + Graph sync + web/mobile MSAL; flips on with a real tenant, dev-header fallback for local), **`P5` Ambient AI (L1–L2)** — Ask-AI drawer, email→expense auto-extraction, NL command palette, streaming onboarding wizard — **`P6` Autonomous Agents (L3)** — daily brief, anomaly-nudge, standup digest, and a **suggest-only** auto-approval evaluator (human still clicks Approve) — and **`P7` Reporting** (core) — six xlsx reports + a Tally reimbursement export at `/finance/reports`. Remaining: **`P0` go-live** (gated on `az login` + Azure costs), the P7 integrations that need a live tenant (Teams/Outlook, SAP, true bank file — deferred *with* cloud), and `P8`. Per the user, **P0 + cloud deployment come last**.
+**Where it stands (2026-06):** core web workflows, the calc engines, the design system, and the AI onboarding wizard are functional. Shipped: `P2` evidence layer, `P3` scheduler + notification fabric, `P4` mobile MVP (bundles clean), `P1` identity (dual-mode code-complete — Entra JWT + Graph sync + web/mobile MSAL; flips on with a real tenant, dev-header fallback for local), **`P5` Ambient AI (L1–L2)** — Ask-AI drawer, email→expense auto-extraction, NL command palette, streaming onboarding wizard — **`P6` Autonomous Agents (L3)** — daily brief, anomaly-nudge, standup digest, and a **suggest-only** auto-approval evaluator (human still clicks Approve) — **`P7` Reporting** (core) — six xlsx reports + a Tally reimbursement export at `/finance/reports` — and **`P8` Predictive Intelligence** — the pure `@ces/forecast` models (margin/utilization/spike/wellbeing) behind `/forecast/*` and the dashboard's "Forward-looking risk" panel. **All feature phases P1–P8 are done.** Remaining: **`P0` go-live** + the P7 integrations that need a live tenant (Teams/Outlook, SAP, true bank file) — both deferred *with* cloud. Per the user, **P0 + cloud deployment come last**.
 
 ### Shipped surfaces worth knowing (routes/endpoints/state not documented elsewhere)
 
@@ -292,6 +293,7 @@ Roadmap shape (see the doc for each phase's scope):
 - **Streaming onboarding (P5)** — `POST /ai/project-onboard/generate/stream` (SSE) streams `status`→text deltas→final plan; the proxy (`app/api/[...path]`) passes `text/event-stream` through un-buffered; the wizard renders the draft live.
 - **Autonomous agents (P6)** — `apps/api/src/agents/*`, self-scheduled via `@Cron` (gated by `SCHEDULER_DISABLED`), each runnable on demand at `POST /agents/{daily-brief,anomaly-nudge,standup}/run`. AI-narrated via `AiService.narrate()` with deterministic fallbacks. **Auto-approval is suggest-only**: admin-editable `AutoApprovalPolicy` + `GET /agents/auto-approval/suggestions` surface clean expenses (badged in the expense inbox) for one-click human approval — the agent never changes status.
 - **Reporting (P7)** — `apps/api/src/reports/*` → `/finance/reports`. Six `GET /reports/*.xlsx` exports (portfolio P&L, utilization, reimbursements, attendance, travel spend, payslips) built on the live dashboard/payslip computations via `@ces/excel`, plus `GET /reports/reimbursements-tally.xml` (Tally payment vouchers; ledger names via `TALLY_*` env). All `ADMIN`/`FINANCE`, served as attachments through the auth proxy.
+- **Predictive Intelligence (P8)** — pure `packages/forecast` models (`forecastMargin`, `predictUtilizationConflicts`, `detectExpenseSpike`, `wellbeingSignal`; 12 unit tests, reason codes) behind `apps/api/src/forecast/*` → `GET /forecast/{summary,margins,utilization,expense-spike,wellbeing}` (ADMIN). Surfaced as the leadership dashboard's "Forward-looking risk" panel. The forecast service does the I/O; the math stays pure in the package.
 - **Automation** — `apps/api/src/scheduler` (cron heartbeat) + `apps/api/src/notifications` (delivery channels) + web topbar notification bell.
 - **Payslip + Approvals** — line-by-line payslip derivation (traceable to source); central Approvals hub with SLA timers.
 
@@ -302,5 +304,5 @@ Roadmap shape (see the doc for each phase's scope):
 - Keep commits small and logical. Each module/PR should be independently runnable and testable.
 - When something is ambiguous mid-build, **ask rather than guess** — especially anything that touches DA, P&L, approvals, or money flows.
 - Seed sample data for every new entity so the UI is clickable immediately.
-- The financially-sensitive / evidence packages (`da-engine`, `pnl-engine`, `approval-engine`, `evidence`) stay pure (no DB/I/O) and get unit tests **before** the API/UI that uses them.
+- The financially-sensitive / evidence / forecast packages (`da-engine`, `pnl-engine`, `approval-engine`, `evidence`, `forecast`) stay pure (no DB/I/O) and get unit tests **before** the API/UI that uses them.
 - Every new module gets a sentence in this CLAUDE.md and a memory entry if it introduces non-obvious design context.

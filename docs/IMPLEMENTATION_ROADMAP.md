@@ -54,7 +54,7 @@
 | **P5** | Ambient AI (L1–L2) | 🟢 shipped — Ask-AI, auto-extraction, NL palette, streaming | L | AI woven through every screen |
 | **P6** | Autonomous Agents (L3) | 🟢 shipped — daily brief, anomaly-nudge, standup digest; auto-approval is **suggest-only** (human-in-loop) | L | "Low human intervention" realized |
 | **P7** | Reporting & Integrations | 🟢 core shipped — xlsx reporting + Tally export; Teams/Outlook + SAP deferred with cloud | L | Finance + leadership reporting; payroll sync |
-| **P8** | Predictive Intelligence (L4) | 🔴 not started | XL | Proactive, predictive ops |
+| **P8** | Predictive Intelligence (L4) | 🟢 shipped — margin/utilization/spike/wellbeing forecasts + dashboard risk panel | XL | Proactive, predictive ops |
 
 **Critical path:** P0 → P1 → P2/P3 (parallel) → P4 → P5 → P6. P7 and P8 can begin after P3 and P5 respectively.
 
@@ -202,14 +202,18 @@
 **Goal:** stop reacting, start predicting — the capability incumbents structurally can't match on your data.
 
 **Scope**
-- **Margin-erosion forecasting** per project (trajectory, not just current).
-- **Utilization / allocation-conflict prediction** (next month's overbookings before they happen).
-- **Expense-spike / fraud-pattern prediction** (anomaly *prediction*, not just detection).
-- **Employee wellbeing signals** from attendance + task load (overwork/attrition risk) — framed for the *employee's* benefit.
+## P8 — Predictive Intelligence (Level 4) — shipped ✅
 
-**Files/areas:** new `packages/forecast/*` (pure, testable models) + AI service, dashboard surfaces.
+**Shipped** (pure `packages/forecast` + `apps/api/src/forecast/*` + dashboard panel):
+- **Margin-erosion forecasting** per project — linear burn-vs-schedule extrapolation → projected end margin, trajectory, risk band.
+- **Utilization / allocation-conflict prediction** — next-month overbookings (read-only view; the allocation write-guard already blocks >100% at creation, so this is a safety-net surfacing any data that slips through).
+- **Expense-spike prediction** — org-wide monthly z-score spike (mean + k·σ).
+- **Employee wellbeing signals** — overwork risk from sustained weekly on-site hours, framed for the *employee's* benefit.
+
+All four are pure, explainable models (12 unit tests, reason codes on every result) — not opaque ML. The leadership dashboard's "Forward-looking risk" panel surfaces them (ADMIN-only). A Claude narration layer could sit on top later but isn't required.
+
 **Gaps closed:** 🔴→🟢 Predictive (Level 4).
-**Exit:** leadership dashboard shows forward-looking risk, not just current state.
+**Exit:** ✅ leadership dashboard shows forward-looking risk, not just current state.
 **Value:** company = proactive risk management; employee = workload fairness flagged early.
 
 ---
