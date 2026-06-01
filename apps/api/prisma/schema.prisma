@@ -832,6 +832,27 @@ model Anomaly {
   @@index([entityKind, entityId])
 }
 
+// ---------- Auto-approval policy (P6 — suggest-only) ----------
+
+/// Admin-editable policy that defines which expenses are "clean" enough to be
+/// surfaced for one-click approval. Suggest-only: the agent never approves on
+/// its own. A single active row (no hardcoded amounts in code — non-negotiable #1).
+model AutoApprovalPolicy {
+  id             String   @id @default(uuid()) @db.Uuid
+  /// When false, no auto-approvable suggestions are surfaced.
+  enabled        Boolean  @default(true)
+  /// Max expense amount eligible (compared in the same currency).
+  maxAmount      Decimal  @db.Decimal(14, 4)
+  currency       String   @default("INR") @db.Char(3)
+  /// Require at least one attached receipt.
+  requireReceipt Boolean  @default(true)
+  /// Require no WARN/BLOCK receipt fraud flags (covers GPS/dup/amount/date).
+  requireNoFlags Boolean  @default(true)
+  updatedById    String?  @db.Uuid
+  updatedAt      DateTime @updatedAt
+  createdAt      DateTime @default(now())
+}
+
 // ---------- Audit log (soft-delete + history) ----------
 
 model AuditLog {

@@ -29,9 +29,15 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Sparkles } from 'lucide-react';
 import { ApiError, api } from '@/lib/api';
 import { formatDate, formatMoney } from '@/lib/format';
 import type { Expense } from '@/lib/types';
+
+interface AutoApproveSuggestion {
+  expenseId: string;
+  reasons: string[];
+}
 
 export default function ExpensesInboxPage() {
   const qc = useQueryClient();
@@ -39,6 +45,17 @@ export default function ExpensesInboxPage() {
     queryKey: ['expenses', 'inbox'],
     queryFn: () => api.get<Expense[]>('/expenses/inbox'),
   });
+  // Suggest-only auto-approval: which queued expenses pass the clean-expense policy.
+  const suggestions = useQuery({
+    queryKey: ['expenses', 'auto-approvable'],
+    queryFn: () =>
+      api.get<{ suggestions: AutoApproveSuggestion[] }>('/agents/auto-approval/suggestions'),
+  });
+  const autoMap = React.useMemo(() => {
+    const m = new Map<string, string[]>();
+    for (const s of suggestions.data?.suggestions ?? []) m.set(s.expenseId, s.reasons);
+    return m;
+  }, [suggestions.data]);
 
   const approve = useMutation({
     mutationFn: (id: string) => api.post(`/expenses/${id}/approve`),
@@ -71,32 +88,48 @@ export default function ExpensesInboxPage() {
             {inbox.data?.length === 0 && (
               <TableEmpty colSpan={6}>Inbox zero — nothing waiting on you.</TableEmpty>
             )}
-            {inbox.data?.map((e) => (
-              <TableRow key={e.id}>
-                <TableCell className="text-sm">{e.user.displayName}</TableCell>
-                <TableCell className="font-mono text-xs">{formatDate(e.incurredOn)}</TableCell>
-                <TableCell className="text-xs">{e.category.replace(/_/g, ' ')}</TableCell>
-                <TableCell>
-                  <div className="text-xs text-muted-foreground">{e.project.code}</div>
-                  {e.notes && <div className="text-sm">{e.notes}</div>}
-                </TableCell>
-                <TableCell className="text-right font-mono text-xs">
-                  {formatMoney(e.amount, e.currency)}
-                </TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-2">
-                    <Button
-                      size="sm"
-                      onClick={() => approve.mutate(e.id)}
-                      disabled={approve.isPending}
-                    >
-                      Approve
-                    </Button>
-                    <RejectExpenseDialog id={e.id} />
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
+            {inbox.data?.map((e) => {
+              const reasons = autoMap.get(e.id);
+              const clean = !!reasons;
+              return (
+                <TableRow key={e.id}>
+                  <TableCell className="text-sm">{e.user.displayName}</TableCell>
+                  <TableCell className="font-mono text-xs">{formatDate(e.incurredOn)}</TableCell>
+                  <TableCell className="text-xs">{e.category.replace(/_/g, ' ')}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs text-muted-foreground">{e.project.code}</span>
+                      {clean && (
+                        <span
+                          title={`Passes the auto-approval policy: ${reasons.join('; ')}`}
+                          className="inline-flex items-center gap-1 rounded-md border border-[hsl(var(--ai-via)/0.4)] bg-[hsl(var(--ai-via)/0.08)] px-1.5 py-0.5 text-[10px] font-medium ai-gradient-text"
+                        >
+                          <Sparkles className="h-3 w-3 text-[hsl(var(--ai-via))]" />
+                          Auto-approvable
+                        </span>
+                      )}
+                    </div>
+                    {e.notes && <div className="text-sm">{e.notes}</div>}
+                  </TableCell>
+                  <TableCell className="text-right font-mono text-xs">
+                    {formatMoney(e.amount, e.currency)}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        size="sm"
+                        variant={clean ? 'ai' : 'default'}
+                        onClick={() => approve.mutate(e.id)}
+                        disabled={approve.isPending}
+                      >
+                        Approve
+                      </Button>
+                      <RejectExpenseDialog id={e.id} />
+                    </div>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       </div>
