@@ -15,4 +15,11 @@ export class AgentsController {
   runDailyBrief() {
     return this.agents.runDailyBrief();
   }
+
+  @Post('anomaly-nudge/run')
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Run the anomaly-nudge agent now (admin) — routes open anomalies to owners.' })
+  runAnomalyNudges() {
+    return this.agents.runAnomalyNudges();
+  }
 }

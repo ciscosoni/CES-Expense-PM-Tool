@@ -14,10 +14,25 @@ import { PnlService } from '../projects/pnl.service.js';
  * to one-click approve) and lives in {@link evaluateAutoApprovable} elsewhere.
  */
 const BRIEF_CRON = process.env.DAILY_BRIEF_CRON ?? '0 8 * * 1-5'; // 08:00, weekdays
+const NUDGE_CRON = process.env.ANOMALY_NUDGE_CRON ?? '15 2 * * *'; // 02:15, after the sweep
 /** Margin RAG bands — mirrors the P&L page (red < 15%, amber < 30%). */
 const MARGIN_RED = 15;
 /** An approval pending longer than this (days) is "aging" and surfaces in briefs. */
 const APPROVAL_AGING_DAYS = 2;
+
+/** Rule-based recommended action per anomaly kind (grounded, auditable, no AI needed). */
+const ANOMALY_RECOMMENDATION: Record<string, string> = {
+  RECEIPT_DUPLICATE: 'Two receipts share an image hash — compare them and reject the duplicate expense.',
+  RECEIPT_AMOUNT_MISMATCH: 'Claimed amount exceeds the OCR-read receipt total — ask for clarification or reject.',
+  RECEIPT_DATE_OUT_OF_TRIP: 'Receipt date falls outside the trip window — verify it belongs to this trip.',
+  RECEIPT_GPS_FAR: 'Receipt GPS is far from any project site — confirm where it was incurred.',
+  ALLOCATION_OVERBOOK: 'An engineer is allocated over 100% — rebalance their allocations.',
+  PROJECT_OVER_BUDGET: 'Project spend has crossed budget — review the cost lines and consider a change request.',
+  PROJECT_MARGIN_RED: 'Project margin is in the red — review cost/scope; a CR may be warranted.',
+  EXPENSE_OVER_CAP: 'Expense exceeds the entitlement cap — verify against policy before approving.',
+  ATTENDANCE_NO_PUNCH: 'Missing attendance punch — ask the engineer to regularize the day.',
+  ATTENDANCE_REGULARIZATION_STALE: 'A regularization request has been pending too long — action it.',
+};
 
 interface BriefData {
   redProjects: { code: string; margin: number }[];
@@ -147,6 +162,97 @@ export class AgentsService {
       d.openAnomalies > 0 ||
       d.pendingReimbursements > 0
     );
+  }
+
+  @Cron(NUDGE_CRON, { name: 'anomaly-nudge' })
+  async scheduledAnomalyNudge(): Promise<void> {
+    if (this.enabled) await this.runAnomalyNudges();
+  }
+
+  /**
+   * Anomaly-nudge agent: route each open anomaly to the person who can act on it
+   * (project owner for receipt/project anomalies, the user's manager for
+   * attendance/allocation ones) with a concrete recommended action. Idempotent —
+   * an anomaly already nudged (a notification exists for it) is skipped.
+   */
+  async runAnomalyNudges(): Promise<{ open: number; nudged: number }> {
+    const open = await this.prisma.anomaly.findMany({
+      where: { resolvedAt: null },
+      orderBy: [{ severity: 'desc' }, { detectedAt: 'asc' }],
+      take: 200,
+    });
+    if (!open.length) return { open: 0, nudged: 0 };
+
+    const ids = open.map((a) => a.id);
+    const already = new Set(
+      (
+        await this.prisma.notification.findMany({
+          where: { kind: 'ANOMALY_NUDGE', entityId: { in: ids } },
+          select: { entityId: true },
+        })
+      ).map((n) => n.entityId),
+    );
+    const todo = open.filter((a) => !already.has(a.id));
+
+    let nudged = 0;
+    for (const a of todo) {
+      const recipients = await this.resolveAnomalyOwners(a.entityKind, a.entityId);
+      if (!recipients.length) continue;
+      const action = ANOMALY_RECOMMENDATION[a.kind] ?? 'Review this anomaly and resolve it.';
+      const body = `${a.detail ? a.detail + ' ' : ''}Recommended: ${action}`;
+      await this.notifications.notifyMany(recipients, {
+        kind: 'ANOMALY_NUDGE',
+        title: `Action needed: ${a.kind.replace(/_/g, ' ').toLowerCase()}`,
+        body,
+        severity: a.severity === 'CRITICAL' ? 'CRITICAL' : a.severity === 'WARN' ? 'WARN' : 'INFO',
+        entityKind: 'ANOMALY',
+        entityId: a.id,
+        linkPath: '/dashboard',
+      });
+      nudged++;
+    }
+    this.logger.log(`Anomaly nudges: ${nudged} routed (${open.length} open)`);
+    return { open: open.length, nudged };
+  }
+
+  /** Map an anomaly's offending entity to the user(s) who should act on it. */
+  private async resolveAnomalyOwners(entityKind: string, entityId: string): Promise<string[]> {
+    const ids = new Set<string>();
+    if (entityKind === 'RECEIPT') {
+      const r = await this.prisma.receipt.findUnique({
+        where: { id: entityId },
+        select: { expense: { select: { project: { select: { ownerId: true, pmId: true } } } } },
+      });
+      if (r?.expense.project.ownerId) ids.add(r.expense.project.ownerId);
+    } else if (entityKind === 'EXPENSE') {
+      const e = await this.prisma.expense.findUnique({
+        where: { id: entityId },
+        select: { project: { select: { ownerId: true } } },
+      });
+      if (e?.project.ownerId) ids.add(e.project.ownerId);
+    } else if (entityKind === 'PROJECT') {
+      const p = await this.prisma.project.findUnique({
+        where: { id: entityId },
+        select: { ownerId: true, pmId: true },
+      });
+      if (p?.ownerId) ids.add(p.ownerId);
+      if (p?.pmId) ids.add(p.pmId);
+    } else if (entityKind === 'USER') {
+      const u = await this.prisma.user.findUnique({
+        where: { id: entityId },
+        select: { managerId: true },
+      });
+      if (u?.managerId) ids.add(u.managerId);
+    }
+    // Fallback: route to admins so nothing is silently dropped.
+    if (!ids.size) {
+      const admins = await this.prisma.user.findMany({
+        where: { active: true, deletedAt: null, roles: { has: 'ADMIN' } },
+        select: { id: true },
+      });
+      admins.forEach((a) => ids.add(a.id));
+    }
+    return [...ids];
   }
 
   private briefFallback(name: string, d: BriefData): string {
