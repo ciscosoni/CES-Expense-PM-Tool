@@ -44,6 +44,9 @@ importers:
       '@ces/excel':
         specifier: workspace:*
         version: link:../../packages/excel
+      '@ces/forecast':
+        specifier: workspace:*
+        version: link:../../packages/forecast
       '@ces/pnl-engine':
         specifier: workspace:*
         version: link:../../packages/pnl-engine

@@ -29,6 +29,7 @@
     "@ces/domain": "workspace:*",
     "@ces/evidence": "workspace:*",
     "@ces/excel": "workspace:*",
+    "@ces/forecast": "workspace:*",
     "@ces/pnl-engine": "workspace:*",
     "@nestjs/common": "^10.4.7",
     "@nestjs/config": "^3.3.0",
