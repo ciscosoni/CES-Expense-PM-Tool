@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
+import { Decimal } from '@prisma/client/runtime/library';
 import {
   calculatePnl,
   type EffectiveBillRate,
@@ -59,6 +60,28 @@ export class PnlService {
     const costRates: EffectiveCostRate[] = costRows.map(mapRate);
     const billRates: EffectiveBillRate[] = billRows.map(mapRate);
 
+    // Closed trips + approved expenses on the project (same basis as the dashboard
+    // portfolio P&L — otherwise the per-project cost would understate by these).
+    const ccy = project.contractCurrency;
+    const trips = await this.prisma.trip.findMany({
+      where: { travelRequest: { projectId, status: { in: ['CLOSED', 'COMPLETED'] } } },
+    });
+    const tripCosts = trips.map((t) => ({
+      travel: t.travelActualCost.toString(),
+      lodging: t.lodgingActualCost.toString(),
+      da: (t.daAmount ?? new Decimal(0)).toString(),
+      localConveyance: t.localConveyanceActualCost.toString(),
+      currency: t.daCurrency ?? ccy,
+    }));
+    const expenseRows = await this.prisma.expense.findMany({
+      where: { projectId, status: { in: ['APPROVED', 'REIMBURSED'] }, deletedAt: null },
+      select: { amount: true, currency: true },
+    });
+    // The engine requires same-currency inputs; only sum matching-currency rows here.
+    const otherExpenses = expenseRows
+      .filter((e) => e.currency === ccy)
+      .map((e) => ({ amount: e.amount.toString(), currency: e.currency }));
+
     return calculatePnl({
       reportingCurrency: project.contractCurrency,
       billingModel: project.billingModel,
@@ -75,8 +98,8 @@ export class PnlService {
       timeLogs: timeLogEntries,
       costRates,
       billRates,
-      tripCosts: [], // wired in Slice 1C
-      otherExpenses: [], // wired in Slice 1C
+      tripCosts,
+      otherExpenses,
       otherDirectCosts: [],
     });
   }
