@@ -52,6 +52,7 @@ packages/
   da-engine/     Daily Allowance calculator (pure, unit-tested)
   pnl-engine/    Project P&L roll-up (pure, unit-tested)
   approval-engine/  Generic approval workflow engine
+  evidence/      Pure evidence helpers (perceptual-hash, ocr-parse, geo) — fraud-flag math
   excel/         xlsx import/export utilities
   config/        env loader + Azure Key Vault adapter
   tsconfig/      shared TypeScript configs
@@ -265,30 +266,29 @@ For every uploaded receipt, derive at upload time:
 10. **Every derived number ships with its derivation** — DA breakdown, P&L cost breakdown, PayslipLine.sourceKind/sourceId. Surfaces in UI on tap (principle #3).
 11. **Rejects require a reason.** Both UX-enforced and recorded in `ApprovalStepInstance.comment` + `AuditLog`.
 
-## 11. Phased delivery (revised after pain-point session)
+## 11. Delivery status
 
-- **Phase 0 — Foundations ✓:** monorepo, calc engines (`da-engine`, `pnl-engine`, `approval-engine`), Prisma schema + migrations, JWT/role guards (Entra wiring stubbed for local), audit/soft-delete plumbing, local Postgres via `docker-compose`, all 7 master-data modules end-to-end (Grades, CostRates, Cities, EntitlementMatrix, DaPolicies, Clients, EndCustomers), seed data.
-- **Phase 1 — MVP (web slices done; mobile pending):**
-  - **1A ✓** — Web foundation (Next.js App Router, shadcn/ui kit, sidebar/topbar, MSAL-stub auth) + admin CRUD for all 7 master-data resources.
-  - **1B ✓** — Projects + Tasks + TimeLogs + Allocations + live P&L (`apps/api/src/projects/pnl.service.ts`); per-project tabs: Overview, Tasks, Milestones, Team, P&L.
-  - **1C-α ✓** — Travel + DA: request → approve → trip → close, with live DA derivation surfaced in UI.
-  - **1C-β ✓** — Expenses + per-project approvals (required reject reasons).
-  - **1C-γ ✓** — Receipts with anti-fraud flags (DUPLICATE_HASH, AMOUNT_OCR_MISMATCH, DATE_OUT_OF_TRIP, GPS_FAR_FROM_TRIP) + Finance reimbursement queue.
-  - **1D ✓** — Leadership Live Ops dashboard (KPIs + portfolio P&L + utilization + anomalies feed).
-  - **1E ✓** — Payslip derivation (line-by-line, traceable to source) + Approvals hub.
-  - **Mobile (not started)** — Today, Tasks, Trip-with-GPS, Receipts-with-EXIF+OCR+hash, Approval Inbox.
-  - **Daily Standup auto-publish flow** (engineer → PM digest → leadership digest) — not started.
-- **Phase 2 — in progress:**
-  - **2A ✓** — Linear-style dark UI redesign (semantic tokens, command palette, sparklines, AI affordances).
-  - **2B ✓** — `PROJECT_OWNER` role + per-project `ownerId`/`budget` + 2-step expense approval (Owner → Finance, with `OWNER_APPROVED` intermediate state).
-  - **2C ✓** — Geofenced Attendance regularization. `AttendanceEvent` ingest → derived `AttendanceDay` summary → engineer-submitted `AttendanceRegularization` with required justification; manager queue at `/attendance/inbox` flips a day's status to `REGULARIZED` on approval.
-  - **2D ✓** — Project Change Requests with `ProjectBaseline` snapshot + scope/time/cost deltas. Owner-only approval applies deltas to the project and records `appliedSnapshot`; P&L page shows baseline-vs-current.
-  - **2E ✓** — Polymorphic `Comment` model (PROJECT/TASK/EXPENSE/TRIP/CHANGE_REQUEST/RECEIPT/ATTENDANCE_REGULARIZATION) + `AnomalyRule` admin surface + `Anomaly` detector (`POST /anomalies/detect`); 7 default rules seeded. Open anomalies surface on the leadership dashboard.
-  - **2F ✓** — AI Project Onboarding Wizard at `/projects/onboard`. Owner pastes an RFP/email/SOW → `POST /ai/project-onboard/generate` calls Claude (`claude-opus-4-7`, adaptive thinking + `output_config.format` JSON schema) using a system prompt seeded with live client/end-customer/people-directory + current-month utilization. Returns a structured plan (project, milestones, tasks with grade hints, team suggestions, budget, P&L forecast, optimization ideas). Owner edits inline; `POST /ai/project-onboard/commit` materializes project + milestones + tasks + allocations + baseline in one transaction. Falls back to a deterministic mock when `ANTHROPIC_API_KEY` is unset.
-  - **Remaining 2x** — Streaming token-by-token in the wizard, in-product Ask-AI (per-record), email/WhatsApp/meeting-note ingestion → daily AI brief.
-- **Phase 3:** Tally / SAP / payroll integrations, Teams / Outlook notifications via Graph, Reporting/BI exports.
+**Single source of truth for delivery status is `docs/IMPLEMENTATION_ROADMAP.md`** — the `P0–P8` roadmap, with a "current baseline" table of what's real, per-phase scope/exit-criteria, and a dependency map. It reconciles against `DEPLOYMENT.md` (cloud infra, Batches 1–5) and `docs/PRODUCT_AUDIT.md` (gap analysis). Do **not** re-track phase status in this file — it drifts. When picking up mid-build, read that doc + `git log`.
 
-When picking up work mid-build, check `git log` + open tasks to see where Phase X stands.
+Roadmap shape (see the doc for each phase's scope):
+`P0` Go-Live · `P1` Identity & Trust (Entra/Graph) · `P2` Evidence Layer · `P3` Automation Heartbeat · `P4` Mobile MVP · `P5` Ambient AI · `P6` Autonomous Agents · `P7` Reporting & Integrations · `P8` Predictive Intelligence.
+
+> Older commits/docs use `Phase 0–3` (the original product-brief plan); that scheme is **retired** in favour of `P0–P8`. They do not line up — `P#` ≠ `Phase #`.
+
+**Where it stands (2026-06):** core web workflows, the calc engines, the design system, and the AI onboarding wizard are functional. Shipped: `P2` evidence layer, `P3` scheduler + notification fabric, `P4` mobile MVP (bundles clean), `P1` identity (dual-mode code-complete — Entra JWT + Graph sync + web/mobile MSAL; flips on with a real tenant, dev-header fallback for local), and the first `P5` slice (per-record **Ask-AI** drawer). Per the deployment memory, **`P0` go-live is the next priority** (gated on `az login` + Azure costs).
+
+### Shipped surfaces worth knowing (routes/endpoints/state not documented elsewhere)
+
+- **Live P&L** — `apps/api/src/projects/pnl.service.ts`; per-project tabs: Overview, Tasks, Milestones, Team, P&L (baseline-vs-current after a CR).
+- **Travel + DA** — request → approve → trip → close, live DA derivation in UI.
+- **Receipts** — anti-fraud flags (`DUPLICATE_HASH`, `AMOUNT_OCR_MISMATCH`, `DATE_OUT_OF_TRIP`, `GPS_FAR_FROM_TRIP`) → Finance reimbursement queue. Evidence math lives in `packages/evidence`; pipeline in `apps/api/src/{receipts,storage}`.
+- **Attendance** — `AttendanceEvent` ingest → derived `AttendanceDay` → engineer `AttendanceRegularization` (required justification); manager queue `/attendance/inbox` flips a day to `REGULARIZED` on approval.
+- **Change Requests** — `ProjectBaseline` snapshot + scope/time/cost deltas; owner-only approval applies deltas and records `appliedSnapshot`.
+- **Comments / Anomalies** — polymorphic `Comment` (PROJECT/TASK/EXPENSE/TRIP/CHANGE_REQUEST/RECEIPT/ATTENDANCE_REGULARIZATION) + `AnomalyRule` admin surface + detector `POST /anomalies/detect` (7 default rules); open anomalies surface on the leadership dashboard.
+- **AI Onboarding Wizard** — `/projects/onboard`; `POST /ai/project-onboard/generate` calls Claude (adaptive thinking + JSON-schema output, seeded with live client/people/utilization context) → `POST /ai/project-onboard/commit` materializes project + milestones + tasks + allocations + baseline in one transaction. Deterministic mock fallback when `ANTHROPIC_API_KEY` is unset.
+- **Ask-AI drawer (P5)** — `POST /ai/ask {entityKind: EXPENSE|TRIP|PROJECT, entityId, question}`; `AiService.ask()` loads the record's real data + derivation (P&L breakdown, DA breakdown, fraud flags), enforces visibility (404 otherwise), and answers grounded in that data citing the numbers. Mounted on the project P&L page + expanded expense row (`components/ask-ai-drawer.tsx`). Same mock fallback.
+- **Automation** — `apps/api/src/scheduler` (cron heartbeat) + `apps/api/src/notifications` (delivery channels) + web topbar notification bell.
+- **Payslip + Approvals** — line-by-line payslip derivation (traceable to source); central Approvals hub with SLA timers.
 
 ## 12. Working method
 
@@ -297,5 +297,5 @@ When picking up work mid-build, check `git log` + open tasks to see where Phase 
 - Keep commits small and logical. Each module/PR should be independently runnable and testable.
 - When something is ambiguous mid-build, **ask rather than guess** — especially anything that touches DA, P&L, approvals, or money flows.
 - Seed sample data for every new entity so the UI is clickable immediately.
-- The financially-sensitive packages (`da-engine`, `pnl-engine`, `approval-engine`) get unit tests **before** the API/UI that uses them.
+- The financially-sensitive / evidence packages (`da-engine`, `pnl-engine`, `approval-engine`, `evidence`) stay pure (no DB/I/O) and get unit tests **before** the API/UI that uses them.
 - Every new module gets a sentence in this CLAUDE.md and a memory entry if it introduces non-obvious design context.

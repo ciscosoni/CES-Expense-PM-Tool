@@ -9,7 +9,7 @@
 > - **Feature/Capability track** — the phases below (P0–P8), each an independently shippable release.
 >
 > Source of truth for product scope: `CLAUDE.md`. Source of truth for cloud infra: `DEPLOYMENT.md`.
-> This file is the bridge. Last updated 2026-05-30.
+> This file is the bridge. Last updated 2026-06-01.
 
 ---
 
@@ -31,30 +31,30 @@
 | Web app + design system (post-redesign) | 🟢 strong |
 | Core web workflows (projects, tasks, expenses, attendance, travel approvals, reimbursements, payslips, change requests, anomaly rules) | 🟢 functional |
 | AI project-onboarding wizard (Claude, real + mock fallback) | 🟢 functional |
-| Identity (Entra ID / Graph) | 🔴 dev-header stub |
-| Evidence layer (Blob, OCR, pHash, EXIF-GPS) | 🟠 SHA-256 + EXIF-timestamp only |
-| Notifications (in-app / Teams / email) | 🔴 not wired |
-| Background scheduler (cron) | 🔴 none |
-| Mobile app | 🔴 scaffold only |
+| Identity (Entra ID / Graph) | 🟢 dual-mode code-complete (Entra JWT + Graph sync + web/mobile MSAL); flips on via tenant env, dev-header fallback for local |
+| Evidence layer (Blob, OCR, pHash, EXIF-GPS) | 🟢 P2 shipped (storage + OCR + pHash + geofence flags) |
+| Notifications (in-app / Teams / email) | 🟢 P3 shipped (notification fabric + topbar bell); Teams/email channels wire on via Graph |
+| Background scheduler (cron) | 🟢 P3 shipped (anomaly sweep + Graph sync on cron) |
+| Mobile app | 🟠 P4 MVP — 5 tabs, offline outbox, MSAL sign-in; bundles clean; not yet on devices/stores |
 | Reporting / BI / xlsx export | 🔴 coming-soon |
 | Integrations (Tally / SAP / payroll) | 🔴 absent |
-| Ambient AI / agents | 🔴 not started |
+| Ambient AI / agents | 🟠 P5 started — per-record "Ask AI" drawer shipped; auto-extraction, NL actions, agents pending |
 
 ---
 
 ## Phase overview
 
-| Phase | Theme | Closes gaps | Sizing | Deploys to prod as |
+| Phase | Theme | Status | Sizing | Deploys to prod as |
 |---|---|---|---|---|
-| **P0** | Go-Live Foundation | deploy the current tool | M | First production environment (admin-locked) |
-| **P1** | Identity & Trust | Entra ID, Graph manager-chain, security hardening | M | Real Microsoft sign-in for all employees |
-| **P2** | Evidence Layer | Blob, OCR, pHash, EXIF-GPS geofence, receipt→expense autofill | L | Self-validating receipts |
-| **P3** | Automation Heartbeat | scheduler + notification fabric | M | Background jobs + alerts that reach people |
-| **P4** | Mobile MVP | field capture (check-in, receipts, approvals) | L | iOS/Android app for field engineers |
-| **P5** | Ambient AI (L1–L2) | auto-extraction, per-record "Ask AI", NL actions | L | AI woven through every screen |
-| **P6** | Autonomous Agents (L3) | auto-approval, standup, anomaly-nudge, daily brief | L | "Low human intervention" realized |
-| **P7** | Reporting & Integrations | xlsx/BI, Tally/SAP/payroll, Teams/Outlook | L | Finance + leadership reporting; payroll sync |
-| **P8** | Predictive Intelligence (L4) | forecasting, utilization/wellbeing signals | XL | Proactive, predictive ops |
+| **P0** | Go-Live Foundation | 🔴 next — gated on `az login` + costs | M | First production environment (admin-locked) |
+| **P1** | Identity & Trust | 🟢 code-complete — flips on with a real tenant | M | Real Microsoft sign-in for all employees |
+| **P2** | Evidence Layer | 🟢 shipped | L | Self-validating receipts |
+| **P3** | Automation Heartbeat | 🟢 shipped | M | Background jobs + alerts that reach people |
+| **P4** | Mobile MVP | 🟠 MVP — bundles clean, not yet on devices/stores | L | iOS/Android app for field engineers |
+| **P5** | Ambient AI (L1–L2) | 🟠 started — "Ask AI" drawer; auto-extract/NL/streaming pending | L | AI woven through every screen |
+| **P6** | Autonomous Agents (L3) | 🔴 not started | L | "Low human intervention" realized |
+| **P7** | Reporting & Integrations | 🔴 not started | L | Finance + leadership reporting; payroll sync |
+| **P8** | Predictive Intelligence (L4) | 🔴 not started | XL | Proactive, predictive ops |
 
 **Critical path:** P0 → P1 → P2/P3 (parallel) → P4 → P5 → P6. P7 and P8 can begin after P3 and P5 respectively.
 
