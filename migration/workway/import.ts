@@ -49,13 +49,17 @@ function parseDate(s: unknown): Date | null {
   return null;
 }
 function parseHours(tl: any): number {
+  let v = 0;
   const timer = ht(tl.timer); // HH:MM:SS
-  let m = timer.match(/^(\d+):(\d{2}):(\d{2})$/);
-  if (m) return Math.round((+m[1] + +m[2] / 60 + +m[3] / 3600) * 100) / 100;
-  const h = ht(tl.hours).match(/(\d+)\s*h/);
-  const mi = ht(tl.hours).match(/(\d+)\s*m/);
-  if (h || mi) return Math.round(((h ? +h[1] : 0) + (mi ? +mi[1] : 0) / 60) * 100) / 100;
-  return 0;
+  const m = timer.match(/^(\d+):(\d{2}):(\d{2})$/);
+  if (m) v = +m[1] + +m[2] / 60 + +m[3] / 3600;
+  else {
+    const h = ht(tl.hours).match(/(\d+)\s*h/);
+    const mi = ht(tl.hours).match(/(\d+)\s*m/);
+    v = (h ? +h[1] : 0) + (mi ? +mi[1] : 0) / 60;
+  }
+  // hours is Decimal(5,2) → cap at 999.99 (runaway/active timers).
+  return Math.min(999.99, Math.max(0, Math.round(v * 100) / 100));
 }
 const cleanName = (s: unknown): string => ht(s).replace(/^(Mr|Ms|Mrs|Dr)\s+/i, '').trim();
 
@@ -224,14 +228,16 @@ async function main() {
     } else clientNameToId.set(name.toLowerCase(), `dry:${name}`);
     tick('Client', 'created');
   }
-  // Fallback client for orphans.
-  let fallbackClientId = clientNameToId.get('workway import (unassigned)');
-  if (!fallbackClientId) {
-    if (COMMIT) {
-      const fc = await prisma.client.create({ data: { name: 'Workway Import (unassigned)', kind: 'SI' } });
-      fallbackClientId = fc.id;
-    } else fallbackClientId = 'dry:fallback-client';
-  }
+  // Fallback client for orphans (upsert — survives re-runs).
+  let fallbackClientId: string;
+  if (COMMIT) {
+    const fc = await prisma.client.upsert({
+      where: { name: 'Workway Import (unassigned)' },
+      update: {},
+      create: { name: 'Workway Import (unassigned)', kind: 'SI' },
+    });
+    fallbackClientId = fc.id;
+  } else fallbackClientId = 'dry:fallback-client';
 
   // ---- 3. PROJECTS ----
   const projects = load('projects');
@@ -245,12 +251,15 @@ async function main() {
     const clientId = clientNameToId.get(clientName) ?? fallbackClientId;
     const pmId = (p.added_by && wwUserToEmail.get(String(p.added_by)) && emailToUserId.get(wwUserToEmail.get(String(p.added_by))!)) || superAdmin.id;
     const budget = p.project_budget ? String(p.project_budget) : null;
+    // plannedStart/plannedEnd are required; default when Workway has no dates.
+    const pStart = parseDate(p.start_date) ?? new Date();
+    const pEnd = parseDate(p.deadline) ?? new Date(pStart.getTime() + 90 * 86_400_000);
     const data: Prisma.ProjectCreateInput = {
       code, name, client: { connect: { id: clientId } },
       category: mapProjectCategory(name, ht((p.category ?? {}).category_name)) as any,
       billingModel: 'T_AND_M', contractValue: budget ?? '0', contractCurrency: 'INR',
       pm: { connect: { id: pmId } }, status: mapProjectStatus(ht(p.project_status)) as any,
-      plannedStart: parseDate(p.start_date), plannedEnd: parseDate(p.deadline),
+      plannedStart: pStart, plannedEnd: pEnd,
       budget: budget, budgetCurrency: budget ? 'INR' : null,
     };
     if (COMMIT && !pmId.startsWith('dry') && !clientId.startsWith('dry')) {
@@ -270,6 +279,7 @@ async function main() {
         code: 'WW-UNASSIGNED', name: 'Unassigned (Workway import)', client: { connect: { id: fallbackClientId } },
         category: 'NON_ACI', billingModel: 'T_AND_M', contractValue: '0', contractCurrency: 'INR',
         pm: { connect: { id: superAdmin.id } }, status: 'ACTIVE',
+        plannedStart: new Date(), plannedEnd: new Date(Date.now() + 365 * 86_400_000),
       },
     });
     fallbackProjectId = fp.id;
