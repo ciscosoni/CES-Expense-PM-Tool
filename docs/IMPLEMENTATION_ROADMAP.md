@@ -38,7 +38,7 @@
 | Mobile app | 🟠 P4 MVP — 5 tabs, offline outbox, MSAL sign-in; bundles clean; not yet on devices/stores |
 | Reporting / BI / xlsx export | 🔴 coming-soon |
 | Integrations (Tally / SAP / payroll) | 🔴 absent |
-| Ambient AI / agents | 🟠 P5 started — per-record "Ask AI" drawer shipped; auto-extraction, NL actions, agents pending |
+| Ambient AI / agents | 🟢 P5 (L1–L2) shipped — Ask-AI drawer, email→expense auto-extraction, NL command palette, streaming wizard; autonomous agents (L3) are P6 |
 
 ---
 
@@ -51,7 +51,7 @@
 | **P2** | Evidence Layer | 🟢 shipped | L | Self-validating receipts |
 | **P3** | Automation Heartbeat | 🟢 shipped | M | Background jobs + alerts that reach people |
 | **P4** | Mobile MVP | 🟠 MVP — bundles clean, not yet on devices/stores | L | iOS/Android app for field engineers |
-| **P5** | Ambient AI (L1–L2) | 🟠 started — "Ask AI" drawer; auto-extract/NL/streaming pending | L | AI woven through every screen |
+| **P5** | Ambient AI (L1–L2) | 🟢 shipped — Ask-AI, auto-extraction, NL palette, streaming | L | AI woven through every screen |
 | **P6** | Autonomous Agents (L3) | 🔴 not started | L | "Low human intervention" realized |
 | **P7** | Reporting & Integrations | 🔴 not started | L | Finance + leadership reporting; payroll sync |
 | **P8** | Predictive Intelligence (L4) | 🔴 not started | XL | Proactive, predictive ops |
