@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm test)",
+      "Bash(pnpm test *)",
+      "Bash(pnpm typecheck)",
+      "Bash(pnpm typecheck *)",
+      "Bash(pnpm lint)",
+      "Bash(pnpm lint *)",
+      "Bash(pnpm format:check)",
+      "Bash(pnpm --filter @ces/api typecheck)",
+      "Bash(pnpm --filter @ces/web typecheck)",
+      "Bash(pnpm --filter @ces/mobile typecheck)",
+      "Bash(pnpm --filter @ces/api lint)",
+      "Bash(pnpm --filter @ces/web lint)",
+      "Bash(pnpm --filter @ces/mobile lint)",
+      "Bash(pnpm --filter @ces/api test)",
+      "Bash(pnpm --filter @ces/api test *)",
+      "Bash(pnpm --filter @ces/mobile test)",
+      "Bash(docker info)"
+    ]
+  }
+}
