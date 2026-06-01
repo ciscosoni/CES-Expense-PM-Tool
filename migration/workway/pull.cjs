@@ -43,7 +43,7 @@ const TARGETS = [
   'leaves',
 ];
 
-const PAGE_SIZE = 500;
+const PAGE_SIZE = 250;
 
 function buildBaseUrls() {
   const idx = JSON.parse(fs.readFileSync(path.join(DISC, 'api-index.json'), 'utf8'));
@@ -92,19 +92,29 @@ function withPage(url, start, length) {
   return u;
 }
 
-async function pullEntity(page, name, baseUrl) {
-  const first = await fetchInPage(page, withPage(baseUrl, 0, PAGE_SIZE));
-  if (!first.json) return { ok: false, status: first.status, snippet: first.snippet };
-  // Plain-array endpoints (holidays etc.) come back complete in one shot.
-  if (Array.isArray(first.json)) return { ok: true, rows: first.json, total: first.json.length };
+async function pullEntity(page, name, baseUrl, have = []) {
+  // Fetch one page, retrying transient failures (nav/size hiccups) before giving up.
+  const fetchPage = async (start, length) => {
+    for (let attempt = 0; attempt < 4; attempt++) {
+      const r = await fetchInPage(page, withPage(baseUrl, start, length));
+      if (r.json && (Array.isArray(r.json) || Array.isArray(r.json.data))) return r.json;
+      await new Promise((s) => setTimeout(s, 1500));
+    }
+    return null;
+  };
 
-  const total = first.json.recordsTotal ?? (first.json.data || []).length;
-  const all = [...(first.json.data || [])];
-  let start = PAGE_SIZE;
-  while (all.length < total && start < 500000) {
-    const r = await fetchInPage(page, withPage(baseUrl, start, PAGE_SIZE));
-    const rows = r.json && Array.isArray(r.json.data) ? r.json.data : [];
-    if (!rows.length) break;
+  const first = await fetchPage(0, PAGE_SIZE);
+  if (!first) return { ok: false, status: 0, snippet: 'no data after retries' };
+  if (Array.isArray(first)) return { ok: true, rows: first, total: first.length };
+
+  const total = first.recordsTotal ?? (first.data || []).length;
+  // Resume from what we already have on disk for this entity.
+  const all = have.length && have.length < total ? [...have] : [...(first.data || [])];
+  let start = all.length;
+  while (all.length < total && start < 1000000) {
+    const j = await fetchPage(start, PAGE_SIZE);
+    const rows = j && Array.isArray(j.data) ? j.data : [];
+    if (!rows.length) break; // genuinely empty after retries
     all.push(...rows);
     process.stdout.write(`\r    ${name}: ${all.length}/${total}   `);
     start += PAGE_SIZE;
@@ -153,15 +163,21 @@ async function pullEntity(page, name, baseUrl) {
   const summary = [];
   for (const [name, url] of Object.entries(urls)) {
     const file = path.join(OUT, `${name}.json`);
+    let have = [];
     if (!FORCE && fs.existsSync(file) && fs.statSync(file).size > 100) {
       const existing = JSON.parse(fs.readFileSync(file, 'utf8'));
-      const n = Array.isArray(existing) ? existing.length : (existing.data || []).length;
-      console.log(`  ⏭  ${name.padEnd(18)} skipped (already have ${n} rows; FORCE=1 to re-pull)`);
-      summary.push({ name, ok: true, rows: n, skipped: true });
-      continue;
+      const rows = Array.isArray(existing) ? existing : existing.data || [];
+      const tot = Array.isArray(existing) ? rows.length : existing.recordsTotal ?? rows.length;
+      if (rows.length >= tot) {
+        console.log(`  ⏭  ${name.padEnd(18)} complete (${rows.length} rows) — skipped`);
+        summary.push({ name, ok: true, rows: rows.length, skipped: true });
+        continue;
+      }
+      have = rows;
+      console.log(`  ↻  ${name.padEnd(18)} resuming from ${rows.length}/${tot}…`);
     }
     try {
-      const res = await pullEntity(page, name, url);
+      const res = await pullEntity(page, name, url, have);
       if (!res.ok) {
         console.log(`  ✗ ${name.padEnd(18)} HTTP ${res.status} ${res.snippet ?? ''}`);
         summary.push({ name, ok: false, status: res.status });
