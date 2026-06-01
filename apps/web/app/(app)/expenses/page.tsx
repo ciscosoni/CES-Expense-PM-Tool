@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { ChevronDown, ChevronRight, Plus, ScanLine, Send } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, ScanLine, Send, Sparkles, WandSparkles } from 'lucide-react';
 import { ReceiptUpload } from '@/components/expenses/receipt-upload';
 import { AiBadge } from '@/components/ai-badge';
 import { AskAiDrawer } from '@/components/ask-ai-drawer';
@@ -156,6 +156,18 @@ interface ReceiptAnalysis {
   };
 }
 
+interface ExpenseDraft {
+  category: ExpenseCategory;
+  amount: string | null;
+  currency: string;
+  incurredOn: string | null;
+  vendor: string | null;
+  notes: string;
+  projectCode: string | null;
+  confidence: 'high' | 'medium' | 'low';
+  rationale: string;
+}
+
 /** Read a File into a bare base64 string (no data: prefix) for the API. */
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -190,6 +202,41 @@ function NewExpenseDialog() {
     null,
   );
   const [analyzing, setAnalyzing] = React.useState(false);
+  const [pasteText, setPasteText] = React.useState('');
+  const [extracting, setExtracting] = React.useState(false);
+  const [pasteOpen, setPasteOpen] = React.useState(false);
+
+  async function handleExtract() {
+    const text = pasteText.trim();
+    if (!text) return;
+    setExtracting(true);
+    try {
+      const { draft, source } = await api.post<{ draft: ExpenseDraft; source: 'claude' | 'mock' }>(
+        '/ai/extract-expense',
+        { text },
+      );
+      if (draft.amount) form.setValue('amount', draft.amount, { shouldDirty: true });
+      if (draft.currency) form.setValue('currency', draft.currency);
+      if (draft.incurredOn) form.setValue('incurredOn', draft.incurredOn);
+      if (draft.category) form.setValue('category', draft.category);
+      const note = [draft.vendor, draft.notes].filter(Boolean).join(' · ');
+      if (note) form.setValue('notes', note);
+      const matched = draft.projectCode
+        ? projects.data?.find((p) => p.code === draft.projectCode)
+        : undefined;
+      if (matched) form.setValue('projectId', matched.id, { shouldDirty: true });
+      setPasteOpen(false);
+      toast.success(
+        `Drafted from text${source === 'mock' ? ' (mock — set ANTHROPIC_API_KEY)' : ''}${
+          draft.confidence !== 'high' ? ` · ${draft.confidence} confidence, please check` : ''
+        }.`,
+      );
+    } catch (err) {
+      toast.error(err instanceof ApiError ? err.message : 'Could not read that text');
+    } finally {
+      setExtracting(false);
+    }
+  }
 
   async function handleScan(file: File) {
     setAnalyzing(true);
@@ -288,6 +335,54 @@ function NewExpenseDialog() {
               }}
             />
           </label>
+
+          {!pasteOpen ? (
+            <button
+              type="button"
+              onClick={() => setPasteOpen(true)}
+              className="flex w-full items-center gap-2 rounded-lg border border-dashed border-border/70 px-4 py-2.5 text-sm text-muted-foreground transition-colors hover:border-[hsl(var(--ai-via)/0.5)] hover:text-foreground"
+            >
+              <WandSparkles className="h-4 w-4 text-[hsl(var(--ai-via))]" />
+              Or paste an email / message — AI drafts the expense
+            </button>
+          ) : (
+            <div className="space-y-2 rounded-lg border border-[hsl(var(--ai-via)/0.35)] bg-muted/20 p-3">
+              <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                <Sparkles className="h-3.5 w-3.5 text-[hsl(var(--ai-via))]" />
+                Paste a hotel bill, cab receipt email, or WhatsApp message
+              </div>
+              <textarea
+                value={pasteText}
+                onChange={(e) => setPasteText(e.target.value)}
+                rows={4}
+                placeholder="e.g. Your Uber trip on 2026-05-28 — ₹430 from Noida Sector 62 to client site…"
+                className="w-full resize-none rounded-md border border-input bg-background px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              />
+              <div className="flex justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setPasteOpen(false);
+                    setPasteText('');
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  variant="ai"
+                  size="sm"
+                  onClick={handleExtract}
+                  disabled={extracting || !pasteText.trim()}
+                >
+                  <Sparkles className="h-3.5 w-3.5" />
+                  {extracting ? 'Reading…' : 'Draft expense'}
+                </Button>
+              </div>
+            </div>
+          )}
 
           <Field label="Project" error={form.formState.errors.projectId?.message}>
             <Select

@@ -12,7 +12,13 @@ import { AuditService } from '../audit/audit.service.js';
 import { PnlService } from '../projects/pnl.service.js';
 import { visibilityWhere } from '../projects/projects.service.js';
 import type { AuthedUser } from '../auth/index.js';
-import { OnboardingPlanSchema, type AskEntityKind, type OnboardingPlan } from './ai.dto.js';
+import {
+  ExpenseDraftSchema,
+  OnboardingPlanSchema,
+  type AskEntityKind,
+  type ExpenseDraft,
+  type OnboardingPlan,
+} from './ai.dto.js';
 
 /**
  * Owner-facing AI surface.
@@ -540,6 +546,129 @@ ${JSON.stringify(context, null, 2)}`;
 You asked: "${question}"
 
 Here's what this record shows: ${headline}. The full record (with its derivation) is loaded and would be sent to Claude to answer precisely and cite the numbers.`;
+  }
+
+  /**
+   * Auto-extraction (P5): turn a pasted/forwarded email, message, or bill into a
+   * structured expense draft the user confirms. Grounds the project guess in the
+   * live active-project list. Mock when no API key.
+   */
+  async extractExpense(input: { text: string }): Promise<{
+    draft: ExpenseDraft;
+    source: 'claude' | 'mock';
+  }> {
+    const projects = await this.prisma.project.findMany({
+      where: { deletedAt: null, status: 'ACTIVE' },
+      select: { code: true, name: true },
+      take: 100,
+    });
+
+    if (!this.client) {
+      return { draft: this.mockDraft(input.text, projects), source: 'mock' };
+    }
+
+    const system = `You extract a single expense line from a raw artifact — a forwarded email, a WhatsApp message, an SMS, or a hotel/taxi/restaurant bill — for an engineer at CES Tech (an IT infrastructure SI in Noida, India).
+
+Return ONE expense draft as JSON matching the schema. Rules:
+- EVIDENCE-BY-DEFAULT: every value must be defensible from the text. If a field isn't stated, return null (amount/date/vendor/projectCode) or a conservative default — never fabricate.
+- amount: the total paid, as a plain decimal string (no currency symbol/commas). currency: 3-letter ISO (default INR if the text gives ₹ / Rs / no hint).
+- incurredOn: the transaction date as YYYY-MM-DD. Today is ${new Date().toISOString().slice(0, 10)}; resolve relative dates ("yesterday") against it.
+- category: best fit of TRAVEL, LODGING, MEALS, LOCAL_CONVEYANCE, COMMUNICATION, MATERIALS, OTHER (hotel→LODGING, flight/train→TRAVEL, cab/auto→LOCAL_CONVEYANCE, food→MEALS).
+- projectCode: only if the text clearly references one of these active projects (else null):
+${projects.map((p) => `  - ${p.code} — ${p.name}`).join('\n') || '  (no active projects)'}
+- notes: a one-line human summary (vendor + what it was). confidence: high/medium/low. rationale: one sentence on how you read the amount/date.
+
+Output only the JSON object.`;
+
+    try {
+      const params = {
+        model: this.model,
+        max_tokens: 2_000,
+        output_config: {
+          format: { type: 'json_schema', schema: this.expenseDraftJsonSchema() },
+        },
+        system: [
+          {
+            type: 'text' as const,
+            text: system,
+            cache_control: { type: 'ephemeral' as const },
+          },
+        ],
+        messages: [{ role: 'user' as const, content: input.text }],
+      } satisfies Record<string, unknown>;
+      const response = await this.client.messages.create(
+        params as unknown as Anthropic.Messages.MessageCreateParamsNonStreaming,
+      );
+      const parsed = ExpenseDraftSchema.safeParse(
+        this.safeParseJson(this.extractText(response)),
+      );
+      if (!parsed.success) {
+        this.logger.warn(`Extraction failed schema: ${parsed.error.message}`);
+        throw new BadRequestException('Could not read a clean expense from that text.');
+      }
+      return { draft: parsed.data, source: 'claude' };
+    } catch (err) {
+      if (err instanceof Anthropic.AuthenticationError) {
+        throw new BadRequestException('ANTHROPIC_API_KEY is invalid — check apps/api/.env.');
+      }
+      if (err instanceof Anthropic.RateLimitError) {
+        throw new BadRequestException('Anthropic rate-limited the request. Try again shortly.');
+      }
+      if (err instanceof Anthropic.APIError) {
+        this.logger.error(`Anthropic API error ${err.status}: ${err.message}`);
+        throw new BadRequestException(`Anthropic API error (${err.status}).`);
+      }
+      throw err;
+    }
+  }
+
+  private expenseDraftJsonSchema(): Record<string, unknown> {
+    return {
+      type: 'object',
+      additionalProperties: false,
+      required: ['category', 'amount', 'currency', 'incurredOn', 'vendor', 'notes', 'projectCode', 'confidence', 'rationale'],
+      properties: {
+        category: {
+          type: 'string',
+          enum: ['TRAVEL', 'LODGING', 'MEALS', 'LOCAL_CONVEYANCE', 'COMMUNICATION', 'MATERIALS', 'OTHER'],
+        },
+        amount: { type: ['string', 'null'], pattern: '^\\d+(\\.\\d{1,4})?$' },
+        currency: { type: 'string', minLength: 3, maxLength: 3 },
+        incurredOn: { type: ['string', 'null'], pattern: '^\\d{4}-\\d{2}-\\d{2}$' },
+        vendor: { type: ['string', 'null'], maxLength: 160 },
+        notes: { type: 'string', maxLength: 600 },
+        projectCode: { type: ['string', 'null'], maxLength: 40 },
+        confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
+        rationale: { type: 'string', maxLength: 600 },
+      },
+    };
+  }
+
+  private mockDraft(text: string, projects: { code: string; name: string }[]): ExpenseDraft {
+    // Cheap heuristics so the flow is demonstrable without an API key.
+    const amount = text.match(/(?:₹|rs\.?|inr)\s*([\d,]+(?:\.\d{1,2})?)/i)?.[1]?.replace(/,/g, '');
+    const lower = text.toLowerCase();
+    const category: ExpenseDraft['category'] = /hotel|stay|lodg|room/.test(lower)
+      ? 'LODGING'
+      : /flight|train|air|irctc|indigo|vistara/.test(lower)
+        ? 'TRAVEL'
+        : /cab|taxi|uber|ola|auto/.test(lower)
+          ? 'LOCAL_CONVEYANCE'
+          : /lunch|dinner|food|restaurant|cafe|meal/.test(lower)
+            ? 'MEALS'
+            : 'OTHER';
+    const projectCode = projects.find((p) => text.includes(p.code))?.code ?? null;
+    return {
+      category,
+      amount: amount ?? null,
+      currency: 'INR',
+      incurredOn: text.match(/\d{4}-\d{2}-\d{2}/)?.[0] ?? null,
+      vendor: null,
+      notes: '(Mock extraction — set ANTHROPIC_API_KEY for real parsing.) Review the fields.',
+      projectCode,
+      confidence: 'low',
+      rationale: 'Heuristic mock — no AI key set.',
+    };
   }
 
   // ---------- Internals ----------

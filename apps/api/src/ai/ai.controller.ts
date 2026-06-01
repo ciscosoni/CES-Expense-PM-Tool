@@ -3,7 +3,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, Roles, type AuthedUser } from '../auth/index.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { AiService } from './ai.service.js';
-import { AskDto, CommitOnboardingDto, GenerateOnboardingDto } from './ai.dto.js';
+import { AskDto, CommitOnboardingDto, ExtractDto, GenerateOnboardingDto } from './ai.dto.js';
 
 @ApiTags('AI')
 @ApiBearerAuth()
@@ -39,5 +39,14 @@ export class AiController {
   })
   ask(@Body() body: AskDto, @CurrentUser() user: AuthedUser) {
     return this.ai.ask(body, user);
+  }
+
+  @Post('extract-expense')
+  @ApiOperation({
+    summary:
+      'Turn a pasted email / message / bill into a structured expense draft the user confirms. Grounds the project guess in active projects.',
+  })
+  extractExpense(@Body() body: ExtractDto) {
+    return this.ai.extractExpense(body);
   }
 }

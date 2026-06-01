@@ -95,3 +95,43 @@ export const AskSchema = z.object({
 });
 export class AskDto extends createZodDto(AskSchema) {}
 export interface AskDto extends z.infer<typeof AskSchema> {}
+
+// ----- Auto-extraction: free text (email / message) → structured expense draft (P5) -----
+
+export const ExtractSchema = z.object({
+  /** Raw pasted/forwarded text — an email, WhatsApp message, or hotel bill. */
+  text: z.string().min(10, 'Paste the email or message').max(20_000),
+});
+export class ExtractDto extends createZodDto(ExtractSchema) {}
+export interface ExtractDto extends z.infer<typeof ExtractSchema> {}
+
+/** The drafted expense the UI pre-fills (the user confirms before saving). */
+export const ExpenseDraftSchema = z.object({
+  category: z.enum([
+    'TRAVEL',
+    'LODGING',
+    'MEALS',
+    'LOCAL_CONVEYANCE',
+    'COMMUNICATION',
+    'MATERIALS',
+    'OTHER',
+  ]),
+  amount: z
+    .string()
+    .regex(/^\d+(\.\d{1,4})?$/)
+    .nullable()
+    .default(null),
+  currency: z.string().length(3).default('INR'),
+  incurredOn: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/)
+    .nullable()
+    .default(null),
+  vendor: z.string().max(160).nullable().default(null),
+  notes: z.string().max(600).default(''),
+  /** AI's guess at the project code from the text; UI maps it to a project id. */
+  projectCode: z.string().max(40).nullable().default(null),
+  confidence: z.enum(['high', 'medium', 'low']).default('low'),
+  rationale: z.string().max(600).default(''),
+});
+export type ExpenseDraft = z.infer<typeof ExpenseDraftSchema>;
