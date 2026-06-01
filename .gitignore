@@ -49,10 +49,11 @@ Thumbs.db
 # Local receipt blob store (dev)
 apps/api/.uploads/
 
-# Workway migration source data — real company exports, never commit (PII/financial).
-# Only the importer CODE under migration/ is tracked.
+# Workway migration source data — real company exports/captures, never commit
+# (PII/financial). Only the importer CODE under migration/ is tracked.
 migration/**/*.xlsx
 migration/**/*.csv
 migration/**/*.pdf
 migration/**/*.json
+migration/workway/_discovery/
 !migration/**/sample-*.xlsx

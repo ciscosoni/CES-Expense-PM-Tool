@@ -3,12 +3,34 @@
 One-time import of existing data from **Workway** (`cestech.workway.pro`) into this tool's
 local dev database. Decided: load into local dev Postgres and keep it as the working dataset.
 
-> **Claude can't reach Workway** (it's behind Google/email login). So **you export, Claude imports.**
-> Drop the exported files in **this folder** (`migration/workway/`). The `.xlsx`/`.csv` files are
-> git-ignored on purpose — they hold real PII/financial data and must not be committed. Only the
-> importer code is tracked.
+> **Claude can't log into Workway from its environment** (no browser session, can't solve the
+> Google/OAuth flow). So the migration runs as a **local tool you execute** — your credentials stay
+> on your machine and are never sent to Claude. All captured/exported data under `_discovery/` and
+> `*.xlsx` is git-ignored (PII/financial); only the tool code is tracked.
 
-## 1. What to export from Workway
+## Path A (recommended) — automated capture via `capture.cjs`
+
+This needs **no manual exporting and no password sharing**. It opens a real Chrome window; you log in
+yourself; as you browse, it records the JSON the Workway app's own backend returns — which is the
+structured data, cleaner than Excel.
+
+```bash
+node migration/workway/capture.cjs
+```
+
+1. A Chrome window opens at Workway. **Log in** (Google / email / 2FA — however you normally do).
+2. **Open every module** you want migrated and **page through the long lists** so all rows load:
+   People · Clients · Projects · Tasks · Timesheets · Allocations · Expenses · Travel · Attendance ·
+   Reports.
+3. Each JSON payload is saved to `migration/workway/_discovery/` with an `api-index.json` map.
+4. When you've visited everything, **close the browser window**.
+5. Tell Claude *"Workway capture is done"* → it reads the index, proposes the mapping, dry-runs, and
+   imports on your approval.
+
+If `api-index.json` comes out **empty**, Workway renders data server-side (no JSON API) — say so and
+use Path B.
+
+## Path B (fallback) — manual Excel export
 
 Use Workway's **Advanced Reports → export to Excel (.xlsx)**. Export each module below and save it
 with the exact filename shown (so the importer can find it). If a module's columns differ from the
@@ -30,7 +52,7 @@ guesses below, that's fine — Claude maps from the *actual* headers after inspe
 Export **everything you have**; skip the ones Workway doesn't hold. One file per module is ideal,
 but a single multi-sheet workbook works too — just say so.
 
-## 2. What Claude does once the files are here
+## What Claude does next (either path)
 
 1. **Inspect** each file — print sheet names, headers, row counts, sample rows — and show you the
    proposed column → schema mapping for sign-off. No data is written yet.
@@ -41,7 +63,7 @@ but a single multi-sheet workbook works too — just say so.
    warnings — nothing committed.
 4. On your **approval**, run for real, in dependency order, in a transaction per entity.
 
-## 3. Order & caveats (why mapping isn't trivial)
+## Order & caveats (why mapping isn't trivial)
 
 - **Dependency order** (foreign keys): people → grades → clients/end-customers → projects → tasks →
   timesheets/allocations → travel → expenses → attendance.
@@ -57,7 +79,7 @@ but a single multi-sheet workbook works too — just say so.
 - **Things that won't map:** Workway modules we don't model (e.g. Leads, Performance reviews, generic
   HR) are skipped — Claude lists what it dropped and why.
 
-## 4. Hand-off
+## Hand-off
 
 When the files are in this folder, tell Claude "the Workway exports are in `migration/workway/`" and
 it will start at step 2.1 (inspect + propose mapping).
