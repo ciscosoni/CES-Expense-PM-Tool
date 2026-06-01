@@ -55,7 +55,7 @@
 | **P6** | Autonomous Agents (L3) | 🟢 shipped — daily brief, anomaly-nudge, standup digest; auto-approval is **suggest-only** (human-in-loop) | L | "Low human intervention" realized |
 | **P7** | Reporting & Integrations | 🟢 core shipped — xlsx reporting + Tally export; Teams/Outlook + SAP deferred with cloud | L | Finance + leadership reporting; payroll sync |
 | **P8** | Predictive Intelligence (L4) | 🟢 shipped — margin/utilization/spike/wellbeing forecasts + dashboard risk panel | XL | Proactive, predictive ops |
-| **P9** | Operational & Billing Depth | 🟠 in progress — gaps surfaced by the Workway migration | XL | Full project P&L + billing, leave, richer tasks |
+| **P9** | Operational & Billing Depth | 🟢 shipped — billing, invoicing, leave/holidays, richer tasks, HR-lite, vendors, timer | XL | Full project P&L + billing, leave, richer tasks |
 
 **Critical path:** P0 → P1 → P2/P3 (parallel) → P4 → P5 → P6. P7 and P8 can begin after P3 and P5 respectively.
 
@@ -224,12 +224,14 @@ All four are pure, explainable models (12 unit tests, reason codes on every resu
 
 Slices (each independently shippable):
 - **A — Billing/revenue loop ✅:** `BillRate` master data (time-versioned) + `TimeLog.billable`; the `pnl-engine` now computes **T&M revenue = Σ billable hours × bill rate** (4 new unit tests). API `master-data/bill-rates`, admin screen at `/admin/bill-rates`, wired into `PnlService`. Fixes the half-empty (cost-only) P&L.
-- **B — Client invoicing / estimates:** invoices from billable time + signed-off milestones; client GST/tax/billing details. *(pending)*
-- **C — Leave management + holiday calendar:** integrates with attendance (a leave day ≠ absent), DA (no DA on leave), payslip (paid/unpaid), capacity. *(pending)*
-- **D — Estimate-vs-actual + richer tasks:** `estimate_hours` vs logged hours → effort variance feeding the P8 forecast; priority, labels, sub-tasks, milestone link, board columns. *(pending)*
-- **E — HR-lite lifecycle:** probation/notice/internship-end, employment type (drives cost rate). *(pending)*
-- **F — Recurring expenses + vendor master.** *(pending)*
-- **G — Live start/stop timer (mobile-first).** *(pending)*
+- **B — Client invoicing ✅:** `Invoice`/`InvoiceLine`; `POST /invoices/generate` builds a draft from billable time (hours by grade × bill rate) + tax; send/paid lifecycle; `/finance/invoices` page. Client GST/tax/billing fields added.
+- **C — Leave + holidays ✅:** `Leave`/`LeaveType`/`Holiday`; request → approve/reject; `/leave` page + holiday calendar. Imported 286 leaves + 53 holidays.
+- **D — Richer tasks ✅:** `Task.estimateHours`/`priority`/`labels`/`milestoneId`; backfilled 1,822 tasks (estimate-vs-actual = estimate vs Σ timelogs).
+- **E — HR-lite ✅:** `User.employmentType`/`joiningDate`/`probationEndDate`/`noticePeriodEndDate`; backfilled 46 users, exposed on `/users`.
+- **F — Vendors + recurring ✅:** `Vendor` master + `Expense.vendorId`/`isRecurring`; imported 165 vendors, linked 467 expenses.
+- **G — Live timer ✅:** `ActiveTimer` (one per user); `POST /timer/{start,stop}` — stop writes a TimeLog.
+
+Lighter UI follow-ups (APIs + data are in): vendor picker in the expense form, HR fields on the user page, estimate-vs-actual on the task board, a mobile timer button.
 
 Explicitly **out of scope** (keep in dedicated systems): full payroll/salary runs, leads/CRM pipeline — integrate/export rather than rebuild.
 

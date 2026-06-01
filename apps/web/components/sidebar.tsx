@@ -72,6 +72,12 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
         roles: ['ENGINEER', 'PROJECT_MANAGER', 'PROJECT_OWNER', 'ADMIN'],
       },
       {
+        href: '/leave',
+        label: 'Leave',
+        icon: CalendarCheck,
+        roles: ['ENGINEER', 'PROJECT_MANAGER', 'PROJECT_OWNER', 'FINANCE', 'ADMIN'],
+      },
+      {
         href: '/attendance/inbox',
         label: 'Regularization queue',
         icon: ShieldCheck,
@@ -112,6 +118,12 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
   {
     label: 'Finance',
     items: [
+      {
+        href: '/finance/invoices',
+        label: 'Invoices',
+        icon: Wallet,
+        roles: ['FINANCE', 'PROJECT_OWNER', 'ADMIN'],
+      },
       {
         href: '/finance/reimbursements',
         label: 'Reimbursements',

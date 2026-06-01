@@ -46,6 +46,15 @@ model User {
   createdChangeRequests     ChangeRequest[]            @relation("ChangeRequestCreator")
   decidedChangeRequests     ChangeRequest[]            @relation("ChangeRequestApprover")
   notifications             Notification[]             @relation("UserNotifications")
+  // ---- P9 ----
+  /// HR-lite lifecycle (P9-E).
+  employmentType       EmploymentType?
+  joiningDate          DateTime? @db.Date
+  probationEndDate     DateTime? @db.Date
+  noticePeriodEndDate  DateTime? @db.Date
+  leaves               Leave[]      @relation("UserLeaves")
+  approvedLeaves       Leave[]      @relation("LeaveApprover")
+  activeTimer          ActiveTimer? @relation("UserTimer")
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
   deletedAt     DateTime?
@@ -167,11 +176,16 @@ enum ClientKind {
 }
 
 model Client {
-  id        String     @id @default(uuid()) @db.Uuid
-  name      String     @unique
-  kind      ClientKind
-  active    Boolean    @default(true)
-  projects  Project[]
+  id              String     @id @default(uuid()) @db.Uuid
+  name            String     @unique
+  kind            ClientKind
+  active          Boolean    @default(true)
+  // ---- P9-B: billing details ----
+  gstNumber       String?
+  taxName         String?
+  billingAddress  String?
+  projects        Project[]
+  invoices        Invoice[]
 }
 
 model EndCustomer {
@@ -240,6 +254,7 @@ model Project {
   allocations          Allocation[]
   travelRequests       TravelRequest[]
   expenses             Expense[]
+  invoices             Invoice[]
   attendanceRegularizations AttendanceRegularization[]
   changeRequests       ChangeRequest[]
   baseline             ProjectBaseline?
@@ -280,6 +295,7 @@ model Milestone {
   currency      String    @db.Char(3)
   plannedDate   DateTime  @db.Date
   signedOffDate DateTime? @db.Date
+  tasks         Task[]
 }
 
 // ---------- Tasks & time tracking ----------
@@ -309,7 +325,14 @@ model Task {
   plannedEnd      DateTime?  @db.Date
   actualStart     DateTime?  @db.Date
   actualEnd       DateTime?  @db.Date
+  // ---- P9-D: richer tasks ----
+  estimateHours   Decimal?     @db.Decimal(8, 2)
+  priority        TaskPriority @default(MEDIUM)
+  milestoneId     String?      @db.Uuid
+  milestone       Milestone?   @relation(fields: [milestoneId], references: [id])
+  labels          String[]
   timeLogs        TimeLog[]
+  activeTimers    ActiveTimer[]
   createdAt       DateTime   @default(now())
   updatedAt       DateTime   @updatedAt
   deletedAt       DateTime?
@@ -475,6 +498,10 @@ model Expense {
   reimbursementId String?         @db.Uuid
   reimbursement   Reimbursement?  @relation(fields: [reimbursementId], references: [id])
   receipts        Receipt[]
+  // ---- P9-F: vendor + recurring ----
+  vendorId        String?         @db.Uuid
+  vendor          Vendor?         @relation(fields: [vendorId], references: [id])
+  isRecurring     Boolean         @default(false)
   createdAt       DateTime        @default(now())
   updatedAt       DateTime        @updatedAt
   deletedAt       DateTime?
@@ -908,4 +935,133 @@ model Notification {
 
   @@index([userId, readAt])
   @@index([userId, createdAt])
+}
+
+// ======================= P9 — Operational & Billing Depth =======================
+
+enum TaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum EmploymentType {
+  FULL_TIME
+  PART_TIME
+  INTERN
+  CONTRACT
+  CONSULTANT
+}
+
+// ---- P9-B: client invoicing ----
+enum InvoiceStatus {
+  DRAFT
+  SENT
+  PARTIALLY_PAID
+  PAID
+  CANCELLED
+}
+
+model Invoice {
+  id          String        @id @default(uuid()) @db.Uuid
+  number      String        @unique
+  projectId   String        @db.Uuid
+  project     Project       @relation(fields: [projectId], references: [id])
+  clientId    String        @db.Uuid
+  client      Client        @relation(fields: [clientId], references: [id])
+  status      InvoiceStatus @default(DRAFT)
+  currency    String        @db.Char(3)
+  subtotal    Decimal       @db.Decimal(18, 4)
+  taxPercent  Decimal       @default(0) @db.Decimal(5, 2)
+  total       Decimal       @db.Decimal(18, 4)
+  issueDate   DateTime      @db.Date
+  dueDate     DateTime?     @db.Date
+  paidOn      DateTime?     @db.Date
+  notes       String?
+  /// How the invoice was built: TIME (billable hours) | MILESTONE | MANUAL.
+  source      String        @default("TIME")
+  createdById String?       @db.Uuid
+  lines       InvoiceLine[]
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  @@index([projectId, status])
+  @@index([clientId, status])
+}
+
+model InvoiceLine {
+  id          String  @id @default(uuid()) @db.Uuid
+  invoiceId   String  @db.Uuid
+  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  description String
+  quantity    Decimal @db.Decimal(12, 2)
+  unitRate    Decimal @db.Decimal(14, 4)
+  amount      Decimal @db.Decimal(18, 4)
+}
+
+// ---- P9-C: leave + holidays ----
+enum LeaveStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+model LeaveType {
+  id     String  @id @default(uuid()) @db.Uuid
+  name   String  @unique
+  paid   Boolean @default(true)
+  active Boolean @default(true)
+  leaves Leave[]
+}
+
+model Leave {
+  id           String      @id @default(uuid()) @db.Uuid
+  userId       String      @db.Uuid
+  user         User        @relation("UserLeaves", fields: [userId], references: [id])
+  leaveTypeId  String?     @db.Uuid
+  leaveType    LeaveType?  @relation(fields: [leaveTypeId], references: [id])
+  date         DateTime    @db.Date
+  /// 1 = full day, 0.5 = half day.
+  durationDays Decimal     @default(1) @db.Decimal(4, 2)
+  status       LeaveStatus @default(PENDING)
+  reason       String?
+  approvedById String?     @db.Uuid
+  approvedBy   User?       @relation("LeaveApprover", fields: [approvedById], references: [id])
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+
+  @@index([userId, date])
+  @@index([status])
+}
+
+model Holiday {
+  id   String   @id @default(uuid()) @db.Uuid
+  name String
+  date DateTime @db.Date
+
+  @@unique([name, date])
+  @@index([date])
+}
+
+// ---- P9-F: vendor master ----
+model Vendor {
+  id        String    @id @default(uuid()) @db.Uuid
+  name      String    @unique
+  gstNumber String?
+  active    Boolean   @default(true)
+  expenses  Expense[]
+  createdAt DateTime  @default(now())
+}
+
+// ---- P9-G: live timer (one running timer per user) ----
+model ActiveTimer {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String   @unique @db.Uuid
+  user      User     @relation("UserTimer", fields: [userId], references: [id], onDelete: Cascade)
+  taskId    String   @db.Uuid
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  startedAt DateTime @default(now())
+  note      String?
 }

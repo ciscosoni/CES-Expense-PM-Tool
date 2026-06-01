@@ -40,6 +40,10 @@ import { SchedulerModule } from './scheduler/scheduler.module.js';
 import { AgentsModule } from './agents/agents.module.js';
 import { ReportsModule } from './reports/reports.module.js';
 import { ForecastModule } from './forecast/forecast.module.js';
+import { LeaveModule } from './leave/leave.module.js';
+import { VendorsModule } from './vendors/vendors.module.js';
+import { TimerModule } from './timer/timer.module.js';
+import { InvoicesModule } from './invoices/invoices.module.js';
 
 const isProd = process.env.NODE_ENV === 'production';
 
@@ -121,6 +125,10 @@ const isProd = process.env.NODE_ENV === 'production';
     AgentsModule,
     ReportsModule,
     ForecastModule,
+    LeaveModule,
+    VendorsModule,
+    TimerModule,
+    InvoicesModule,
   ],
   controllers: [HealthController],
   providers: [

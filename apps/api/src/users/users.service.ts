@@ -12,6 +12,11 @@ const PUBLIC_USER_SELECT = {
   gradeId: true,
   roles: true,
   active: true,
+  // ---- P9-E: HR lifecycle ----
+  employmentType: true,
+  joiningDate: true,
+  probationEndDate: true,
+  noticePeriodEndDate: true,
   createdAt: true,
   updatedAt: true,
 } as const;
