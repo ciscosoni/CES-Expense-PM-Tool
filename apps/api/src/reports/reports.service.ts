@@ -99,6 +99,66 @@ export class ReportsService {
     });
   }
 
+  /**
+   * Reimbursements as Tally-importable XML payment vouchers (P7 integration).
+   * One Payment voucher per non-cancelled reimbursement: debit the reimbursements
+   * ledger, credit the bank ledger. Ledger names are env-overridable and must
+   * match the client's Tally chart of accounts.
+   */
+  async reimbursementsTallyXml(): Promise<string> {
+    const expenseLedger = process.env.TALLY_REIMBURSEMENT_LEDGER ?? 'Employee Reimbursements';
+    const bankLedger = process.env.TALLY_BANK_LEDGER ?? 'Bank';
+    const rs = await this.prisma.reimbursement.findMany({
+      where: { status: { not: 'CANCELLED' } },
+      orderBy: { createdAt: 'asc' },
+      include: { user: { select: { displayName: true } } },
+    });
+
+    const vouchers = rs
+      .map((r) => {
+        const amount = r.totalAmount.toFixed(2);
+        const date = (r.paidOn ?? r.createdAt).toISOString().slice(0, 10).replace(/-/g, '');
+        const ref = r.reference ?? r.id.slice(0, 8);
+        const narration = esc(`Reimbursement to ${r.user.displayName} (${r.status})`);
+        return `      <TALLYMESSAGE xmlns:UDF="TallyUDF">
+        <VOUCHER VCHTYPE="Payment" ACTION="Create">
+          <DATE>${date}</DATE>
+          <VOUCHERTYPENAME>Payment</VOUCHERTYPENAME>
+          <VOUCHERNUMBER>${esc(ref)}</VOUCHERNUMBER>
+          <NARRATION>${narration}</NARRATION>
+          <ALLLEDGERENTRIES.LIST>
+            <LEDGERNAME>${esc(expenseLedger)}</LEDGERNAME>
+            <ISDEEMEDPOSITIVE>Yes</ISDEEMEDPOSITIVE>
+            <AMOUNT>-${amount}</AMOUNT>
+          </ALLLEDGERENTRIES.LIST>
+          <ALLLEDGERENTRIES.LIST>
+            <LEDGERNAME>${esc(bankLedger)}</LEDGERNAME>
+            <ISDEEMEDPOSITIVE>No</ISDEEMEDPOSITIVE>
+            <AMOUNT>${amount}</AMOUNT>
+          </ALLLEDGERENTRIES.LIST>
+        </VOUCHER>
+      </TALLYMESSAGE>`;
+      })
+      .join('\n');
+
+    return `<?xml version="1.0" encoding="UTF-8"?>
+<ENVELOPE>
+  <HEADER>
+    <TALLYREQUEST>Import Data</TALLYREQUEST>
+  </HEADER>
+  <BODY>
+    <IMPORTDATA>
+      <REQUESTDESC>
+        <REPORTNAME>Vouchers</REPORTNAME>
+      </REQUESTDESC>
+      <REQUESTDATA>
+${vouchers}
+      </REQUESTDATA>
+    </IMPORTDATA>
+  </BODY>
+</ENVELOPE>`;
+  }
+
   /** Attendance summary for the current month — one row per engineer. */
   async attendanceSummaryXlsx(): Promise<Buffer> {
     const now = new Date();
@@ -203,4 +263,14 @@ export class ReportsService {
       rows,
     });
   }
+}
+
+/** Minimal XML text escaping for Tally exports. */
+function esc(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
 }

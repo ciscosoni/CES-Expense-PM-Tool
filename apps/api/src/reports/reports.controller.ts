@@ -55,4 +55,16 @@ export class ReportsController {
   async travelSpend(@Res() res: Response): Promise<void> {
     this.send(res, 'travel-spend.xlsx', await this.reports.travelSpendXlsx());
   }
+
+  @Get('reimbursements-tally.xml')
+  @Roles('ADMIN', 'FINANCE')
+  @ApiOperation({ summary: 'Reimbursements as Tally-importable XML payment vouchers.' })
+  async reimbursementsTally(@Res() res: Response): Promise<void> {
+    const xml = await this.reports.reimbursementsTallyXml();
+    res.set({
+      'Content-Type': 'application/xml; charset=utf-8',
+      'Content-Disposition': 'attachment; filename="reimbursements-tally.xml"',
+    });
+    res.end(xml);
+  }
 }

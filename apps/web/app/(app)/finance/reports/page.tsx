@@ -1,5 +1,13 @@
 import * as React from 'react';
-import { CalendarCheck, Download, IndianRupee, Plane, TrendingUp, Users } from 'lucide-react';
+import {
+  CalendarCheck,
+  Download,
+  FileCode,
+  IndianRupee,
+  Plane,
+  TrendingUp,
+  Users,
+} from 'lucide-react';
 import { AdminShell } from '@/components/admin-shell';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -45,6 +53,13 @@ const REPORTS: {
     href: '/api/reports/travel-spend.xlsx',
     icon: <Plane className="h-5 w-5" />,
   },
+  {
+    title: 'Reimbursements → Tally',
+    description:
+      'Tally-importable XML payment vouchers for every reimbursement. Ledger names are configurable to match your chart of accounts.',
+    href: '/api/reports/reimbursements-tally.xml',
+    icon: <FileCode className="h-5 w-5" />,
+  },
 ];
 
 export default function ReportsPage() {
@@ -66,7 +81,7 @@ export default function ReportsPage() {
             <CardContent className="mt-auto">
               <Button asChild variant="outline" className="w-full">
                 <a href={r.href} download>
-                  <Download className="h-4 w-4" /> Download .xlsx
+                  <Download className="h-4 w-4" /> Download {r.href.endsWith('.xml') ? '.xml' : '.xlsx'}
                 </a>
               </Button>
             </CardContent>
