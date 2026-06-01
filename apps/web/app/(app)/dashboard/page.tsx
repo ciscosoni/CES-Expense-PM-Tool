@@ -79,6 +79,39 @@ interface Anomalies {
   }>;
 }
 
+interface ForecastSummary {
+  marginsEroding: number;
+  marginsCritical: number;
+  overbookedNextMonth: number;
+  expenseSpike: boolean;
+  wellbeingAtRisk: number;
+}
+
+interface MarginForecastRow {
+  projectId: string;
+  code: string;
+  name: string;
+  currentMarginPercent: number | null;
+  projectedMarginPercent: number | null;
+  trajectory: 'IMPROVING' | 'STABLE' | 'ERODING';
+  riskBand: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+}
+
+interface WellbeingRow {
+  userId: string;
+  userName: string;
+  riskLevel: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  avgWeeklyHours: number;
+  reasons: string[];
+}
+
+const RISK_TONE: Record<string, string> = {
+  CRITICAL: 'border-red-500/30 bg-red-500/10 text-red-300',
+  HIGH: 'border-amber-500/30 bg-amber-500/10 text-amber-300',
+  MEDIUM: 'border-amber-500/20 bg-amber-500/5 text-amber-200',
+  LOW: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
+};
+
 const STATUS_TONE: Record<'green' | 'amber' | 'red' | 'gray', string> = {
   green: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
   amber: 'border-amber-500/30 bg-amber-500/10 text-amber-300',
@@ -100,13 +133,22 @@ function trendLine(value: number, steps = 10, jitter = 0.08): number[] {
 }
 
 export default async function DashboardPage() {
-  const [kpis, portfolio, utilization, anomalies, openAnomalies] = await Promise.all([
-    serverFetch<Kpis>('/dashboards/kpis'),
-    serverFetch<PortfolioRow[]>('/dashboards/portfolio'),
-    serverFetch<UtilizationRow[]>('/dashboards/utilization'),
-    serverFetch<Anomalies>('/dashboards/anomalies'),
-    serverFetch<Anomaly[]>('/anomalies').catch(() => [] as Anomaly[]),
-  ]);
+  const [kpis, portfolio, utilization, anomalies, openAnomalies, fcSummary, fcMargins, fcWellbeing] =
+    await Promise.all([
+      serverFetch<Kpis>('/dashboards/kpis'),
+      serverFetch<PortfolioRow[]>('/dashboards/portfolio'),
+      serverFetch<UtilizationRow[]>('/dashboards/utilization'),
+      serverFetch<Anomalies>('/dashboards/anomalies'),
+      serverFetch<Anomaly[]>('/anomalies').catch(() => [] as Anomaly[]),
+      // Forecast endpoints are ADMIN-only; degrade gracefully for other roles.
+      serverFetch<ForecastSummary>('/forecast/summary').catch(() => null),
+      serverFetch<MarginForecastRow[]>('/forecast/margins').catch(() => [] as MarginForecastRow[]),
+      serverFetch<WellbeingRow[]>('/forecast/wellbeing').catch(() => [] as WellbeingRow[]),
+    ]);
+
+  const atRiskMargins = fcMargins.filter(
+    (m) => m.trajectory === 'ERODING' || m.riskBand === 'CRITICAL' || m.riskBand === 'HIGH',
+  );
 
   const MarginIcon =
     kpis.portfolioMargin !== null && kpis.portfolioMargin < 0 ? TrendingDown : TrendingUp;
@@ -168,6 +210,101 @@ export default async function DashboardPage() {
           icon={<Timer className="h-4 w-4" />}
         />
       </div>
+
+      {fcSummary && (
+        <section className="mt-6">
+          <header className="mb-3 flex items-center justify-between">
+            <h2 className="flex items-center gap-2 text-sm font-semibold tracking-tight">
+              Forward-looking risk <AiBadge label="Predictive" />
+            </h2>
+            <span className="text-[11px] text-muted-foreground">
+              Projected from{' '}
+              <code className="rounded bg-secondary px-1 py-0.5 font-mono">@ces/forecast</code>
+            </span>
+          </header>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+            <ForecastChip label="Margins eroding" value={fcSummary.marginsEroding} tone={fcSummary.marginsEroding ? 'amber' : 'green'} />
+            <ForecastChip label="Margins critical" value={fcSummary.marginsCritical} tone={fcSummary.marginsCritical ? 'red' : 'green'} />
+            <ForecastChip label="Overbooked next month" value={fcSummary.overbookedNextMonth} tone={fcSummary.overbookedNextMonth ? 'amber' : 'green'} />
+            <ForecastChip label="Expense spike" value={fcSummary.expenseSpike ? 'Yes' : 'No'} tone={fcSummary.expenseSpike ? 'red' : 'green'} />
+            <ForecastChip label="Wellbeing at risk" value={fcSummary.wellbeingAtRisk} tone={fcSummary.wellbeingAtRisk ? 'amber' : 'green'} />
+          </div>
+
+          {atRiskMargins.length > 0 && (
+            <Card className="mt-3 p-0">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Projects trending below target</CardTitle>
+                <CardDescription>Current vs projected end-of-engagement margin (linear burn).</CardDescription>
+              </CardHeader>
+              <CardContent className="p-0">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Project</TableHead>
+                      <TableHead className="text-right">Current</TableHead>
+                      <TableHead className="text-right">Projected</TableHead>
+                      <TableHead>Trajectory</TableHead>
+                      <TableHead>Risk</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {atRiskMargins.map((m) => (
+                      <TableRow key={m.projectId}>
+                        <TableCell className="text-xs">
+                          <span className="font-mono">{m.code}</span>
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-xs">
+                          {m.currentMarginPercent == null ? '—' : `${m.currentMarginPercent}%`}
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-xs">
+                          {m.projectedMarginPercent == null ? '—' : `${m.projectedMarginPercent}%`}
+                        </TableCell>
+                        <TableCell>
+                          <span className="inline-flex items-center gap-1 text-xs">
+                            {m.trajectory === 'ERODING' && <TrendingDown className="h-3 w-3 text-red-400" />}
+                            {m.trajectory}
+                          </span>
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={`border text-[10px] ${RISK_TONE[m.riskBand]}`}>{m.riskBand}</Badge>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          )}
+
+          {fcWellbeing.length > 0 && (
+            <Card className="mt-3">
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <AlertTriangle className="h-4 w-4 text-amber-400" /> Workload watch
+                </CardTitle>
+                <CardDescription>Sustained high on-site hours — consider redistributing load.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-1.5">
+                {fcWellbeing.map((w) => (
+                  <div key={w.userId} className="flex items-center justify-between text-xs">
+                    <span>{w.userName}</span>
+                    <span className="flex items-center gap-2 text-muted-foreground">
+                      {w.avgWeeklyHours}h/wk avg
+                      <Badge className={`border text-[10px] ${RISK_TONE[w.riskLevel]}`}>{w.riskLevel}</Badge>
+                    </span>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
+
+          {atRiskMargins.length === 0 && fcWellbeing.length === 0 && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              No forward-looking risks detected — margins on track, no overbookings or workload flags.
+            </p>
+          )}
+        </section>
+      )}
 
       <section className="mt-6">
         <header className="mb-3 flex items-center justify-between">
@@ -452,4 +589,21 @@ function AllocationPill({ total, conflict }: { total: number; conflict: boolean 
       ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
       : 'border-amber-500/30 bg-amber-500/10 text-amber-300';
   return <Badge className={`border ${tone}`}>{total}%</Badge>;
+}
+
+function ForecastChip({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: number | string;
+  tone: 'green' | 'amber' | 'red';
+}) {
+  return (
+    <div className={`rounded-lg border px-3 py-2.5 ${STATUS_TONE[tone]}`}>
+      <div className="text-lg font-semibold tabular-nums">{value}</div>
+      <div className="text-[11px] opacity-80">{label}</div>
+    </div>
+  );
 }
