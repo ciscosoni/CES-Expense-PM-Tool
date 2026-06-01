@@ -2,7 +2,8 @@ import * as React from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useRouter } from 'expo-router';
 import { api } from '@/lib/api';
-import { setDevEmail } from '@/lib/session';
+import { setAccessToken, setDevEmail } from '@/lib/session';
+import { signInWithEntra } from '@/lib/auth-entra';
 import { isEntraConfigured } from '@/lib/config';
 import { useSession } from '@/components/session';
 import { Button, Card, Loading, Screen } from '@/components/ui';
@@ -38,6 +39,22 @@ export default function LoginScreen() {
     }
   }
 
+  async function signInEntra() {
+    setBusy('entra');
+    setError(null);
+    try {
+      const token = await signInWithEntra();
+      await setAccessToken(token);
+      await refresh();
+      router.replace('/(tabs)');
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setError(msg);
+      Alert.alert('Microsoft sign-in', msg);
+      setBusy(null);
+    }
+  }
+
   return (
     <Screen title="CES Tech" subtitle="Internal Operations">
       <View style={{ marginVertical: space(4) }}>
@@ -52,7 +69,8 @@ export default function LoginScreen() {
       {entra ? (
         <Button
           label="Continue with Microsoft"
-          onPress={() => Alert.alert('Entra sign-in', 'Configured in production builds.')}
+          loading={busy === 'entra'}
+          onPress={signInEntra}
         />
       ) : error ? (
         <Card>
