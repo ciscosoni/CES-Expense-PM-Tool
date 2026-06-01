@@ -1,4 +1,4 @@
-import { IndianRupee, Percent, TrendingUp, Wallet } from 'lucide-react';
+import { AlertTriangle, IndianRupee, Percent, TrendingUp, Wallet } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { StatCard } from '@/components/stat-card';
 import {
@@ -16,9 +16,17 @@ import type { PnlResult, ProjectBaseline } from '@/lib/types';
 
 export default async function ProjectPnlPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const [pnl, baseline] = await Promise.all([
+  const [pnl, baseline, dq] = await Promise.all([
     serverFetch<PnlResult>(`/projects/${id}/pnl`),
     serverFetch<ProjectBaseline>(`/change-requests/projects/${id}/baseline`).catch(() => null),
+    serverFetch<{
+      isOverheadBucket: boolean;
+      noBudget: boolean;
+      budgetIsPlaceholder: boolean;
+      overheadExpenses: string;
+      unattributableEffort: string;
+      unattributableTimelogs: number;
+    }>(`/dashboards/projects/${id}/data-quality`).catch(() => null),
   ]);
   const ccy = pnl.revenue.currency;
   const rows: { label: string; amount: string; muted?: boolean }[] = [
@@ -42,6 +50,38 @@ export default async function ProjectPnlPage({ params }: { params: Promise<{ id:
         </div>
         <AskAiDrawer entityKind="PROJECT" entityId={id} title={`${ccy} P&L`} />
       </div>
+
+      {dq?.isOverheadBucket && (
+        <div className="flex flex-wrap items-center gap-x-6 gap-y-1 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-200">
+          <span className="flex items-center gap-1.5 font-medium">
+            <AlertTriangle className="h-3.5 w-3.5" /> Not a real project — this is the overhead / G&amp;A
+            bucket. Excluded from portfolio margin.
+          </span>
+          <span>
+            <span className="font-mono">{formatMoney(dq.overheadExpenses, ccy)}</span> non-project
+            expenses (rent, salaries, petty cash)
+          </span>
+          <span>
+            <span className="font-mono">{formatMoney(dq.unattributableEffort, ccy)}</span> effort on{' '}
+            {dq.unattributableTimelogs} deleted/project-less tasks
+          </span>
+        </div>
+      )}
+      {dq?.noBudget && (
+        <div className="flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-200">
+          <AlertTriangle className="h-3.5 w-3.5" />
+          <span className="font-medium">No contract value set</span> — revenue is zero, so margin
+          isn&apos;t meaningful until a budget is entered.
+        </div>
+      )}
+      {dq?.budgetIsPlaceholder && (
+        <div className="flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-200">
+          <AlertTriangle className="h-3.5 w-3.5" />
+          <span className="font-medium">Placeholder budget</span> — Workway had no contract value,
+          so the budget was seeded at break-even (= cost). Margin reads ~0% until a real contract
+          value is entered.
+        </div>
+      )}
 
       <div className="grid gap-4 md:grid-cols-4">
         <StatCard

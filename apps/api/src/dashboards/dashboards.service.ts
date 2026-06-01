@@ -91,6 +91,58 @@ export class DashboardsService {
     };
   }
 
+  /**
+   * Per-project trust signals for the project P&L tab: whether this is the
+   * overhead/G&A bucket (not a real project), whether it has no budget (so
+   * margin is meaningless), or whether its budget is a break-even placeholder
+   * (Workway had no contract value, so we seeded budget = cost at import).
+   */
+  async projectDataQuality(projectId: string): Promise<{
+    isOverheadBucket: boolean;
+    noBudget: boolean;
+    budgetIsPlaceholder: boolean;
+    overheadExpenses: string;
+    unattributableEffort: string;
+    unattributableTimelogs: number;
+  }> {
+    const project = await this.prisma.project.findFirst({
+      where: { id: projectId, deletedAt: null },
+      select: { id: true, code: true, contractValue: true },
+    });
+    const empty = {
+      isOverheadBucket: false,
+      noBudget: false,
+      budgetIsPlaceholder: false,
+      overheadExpenses: '0',
+      unattributableEffort: '0',
+      unattributableTimelogs: 0,
+    };
+    if (!project) return empty;
+
+    const isOverheadBucket = project.code === 'WW-UNASSIGNED';
+    if (isOverheadBucket) {
+      const dq = await this.dataQuality();
+      return {
+        isOverheadBucket: true,
+        noBudget: false,
+        budgetIsPlaceholder: false,
+        overheadExpenses: dq.overheadExpenses,
+        unattributableEffort: dq.unattributableEffort,
+        unattributableTimelogs: dq.unattributableTimelogs,
+      };
+    }
+
+    const placeholderTag = await this.prisma.auditLog.findFirst({
+      where: { entity: 'Project', entityId: project.id, action: 'BUDGET_PLACEHOLDER' },
+      select: { id: true },
+    });
+    return {
+      ...empty,
+      noBudget: Number(project.contractValue) <= 0,
+      budgetIsPlaceholder: !!placeholderTag,
+    };
+  }
+
   async kpis(): Promise<LeadershipKpis> {
     const [activeProjects, pendingTravelApprovals, pendingExpenseApprovals, pendingReimb, flagged] =
       await Promise.all([

@@ -1,4 +1,4 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, Param, ParseUUIDPipe } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Roles } from '../auth/index.js';
 import { DashboardsService } from './dashboards.service.js';
@@ -42,5 +42,12 @@ export class DashboardsController {
   @ApiOperation({ summary: 'Costs excluded from project P&L (overhead + unattributable) + projects missing budgets' })
   dataQuality() {
     return this.dashboards.dataQuality();
+  }
+
+  @Get('projects/:id/data-quality')
+  @Roles('ADMIN', 'PROJECT_OWNER', 'PROJECT_MANAGER', 'FINANCE', 'ENGINEER')
+  @ApiOperation({ summary: 'Per-project trust signals: overhead bucket / no budget / placeholder budget' })
+  projectDataQuality(@Param('id', new ParseUUIDPipe()) id: string) {
+    return this.dashboards.projectDataQuality(id);
   }
 }
