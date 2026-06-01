@@ -3,7 +3,7 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, Roles, type AuthedUser } from '../auth/index.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { AiService } from './ai.service.js';
-import { CommitOnboardingDto, GenerateOnboardingDto } from './ai.dto.js';
+import { AskDto, CommitOnboardingDto, GenerateOnboardingDto } from './ai.dto.js';
 
 @ApiTags('AI')
 @ApiBearerAuth()
@@ -30,5 +30,14 @@ export class AiController {
   })
   commit(@Body() body: CommitOnboardingDto, @CurrentUser() user: AuthedUser) {
     return this.ai.commitOnboarding(body.plan, user);
+  }
+
+  @Post('ask')
+  @ApiOperation({
+    summary:
+      'Grounded Q&A about a single record (expense, trip, or project). Answers cite the derivation. Visibility-enforced; any authenticated user may ask about records they can see.',
+  })
+  ask(@Body() body: AskDto, @CurrentUser() user: AuthedUser) {
+    return this.ai.ask(body, user);
   }
 }

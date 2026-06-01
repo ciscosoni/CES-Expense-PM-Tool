@@ -81,3 +81,17 @@ export const CommitOnboardingSchema = z.object({
 });
 export class CommitOnboardingDto extends createZodDto(CommitOnboardingSchema) {}
 export interface CommitOnboardingDto extends z.infer<typeof CommitOnboardingSchema> {}
+
+// ----- Ask-AI: grounded Q&A on a single record (P5) -----
+
+/** Records the Ask-AI drawer can answer about. Each has a real derivation. */
+export const AskEntityKind = z.enum(['EXPENSE', 'TRIP', 'PROJECT']);
+export type AskEntityKind = z.infer<typeof AskEntityKind>;
+
+export const AskSchema = z.object({
+  entityKind: AskEntityKind,
+  entityId: z.string().uuid(),
+  question: z.string().min(3, 'Ask a question').max(1000),
+});
+export class AskDto extends createZodDto(AskSchema) {}
+export interface AskDto extends z.infer<typeof AskSchema> {}

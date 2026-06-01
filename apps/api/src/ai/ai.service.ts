@@ -1,11 +1,18 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
 import { Prisma } from '@prisma/client';
 import { Decimal } from '@prisma/client/runtime/library';
 import { PrismaService } from '../prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
+import { PnlService } from '../projects/pnl.service.js';
+import { visibilityWhere } from '../projects/projects.service.js';
 import type { AuthedUser } from '../auth/index.js';
-import { OnboardingPlanSchema, type OnboardingPlan } from './ai.dto.js';
+import { OnboardingPlanSchema, type AskEntityKind, type OnboardingPlan } from './ai.dto.js';
 
 /**
  * Owner-facing AI surface.
@@ -29,6 +36,7 @@ export class AiService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    private readonly pnl: PnlService,
   ) {
     const rawKey = process.env.ANTHROPIC_API_KEY?.trim();
     // The Bicep template stores the literal '_unset_' when no key was supplied
@@ -283,6 +291,255 @@ export class AiService {
       milestoneCount: plan.milestones.length,
       teamSize: teamAssignments.length,
     };
+  }
+
+  /**
+   * Grounded Q&A on a single record (P5 "Ask AI" drawer). Loads the record's
+   * real data + derivation (P&L cost breakdown, DA breakdown, fraud flags),
+   * enforces that the actor may see it, and asks Claude to answer ONLY from that
+   * data — citing the numbers. Read-only. Falls back to a mock with no API key.
+   */
+  async ask(
+    input: { entityKind: AskEntityKind; entityId: string; question: string },
+    actor: AuthedUser,
+  ): Promise<{
+    answer: string;
+    source: 'claude' | 'mock';
+    entityKind: AskEntityKind;
+    entityId: string;
+  }> {
+    const context = await this.gatherEntityContext(input.entityKind, input.entityId, actor);
+
+    if (!this.client) {
+      return {
+        answer: this.mockAnswer(input.entityKind, input.question, context),
+        source: 'mock',
+        entityKind: input.entityKind,
+        entityId: input.entityId,
+      };
+    }
+
+    const system = this.askSystemPrompt(input.entityKind, context);
+    try {
+      const params = {
+        model: this.model,
+        max_tokens: 1200,
+        system: [
+          {
+            type: 'text' as const,
+            text: system,
+            cache_control: { type: 'ephemeral' as const },
+          },
+        ],
+        messages: [{ role: 'user' as const, content: input.question }],
+      } satisfies Record<string, unknown>;
+      const response = await this.client.messages.create(
+        params as unknown as Anthropic.Messages.MessageCreateParamsNonStreaming,
+      );
+      const answer = this.extractText(response);
+      return {
+        answer: answer || 'I could not find an answer to that in this record.',
+        source: 'claude',
+        entityKind: input.entityKind,
+        entityId: input.entityId,
+      };
+    } catch (err) {
+      if (err instanceof Anthropic.AuthenticationError) {
+        throw new BadRequestException('ANTHROPIC_API_KEY is invalid — check apps/api/.env.');
+      }
+      if (err instanceof Anthropic.RateLimitError) {
+        throw new BadRequestException('Anthropic rate-limited the request. Try again shortly.');
+      }
+      if (err instanceof Anthropic.APIError) {
+        this.logger.error(`Anthropic API error ${err.status}: ${err.message}`);
+        throw new BadRequestException(`Anthropic API error (${err.status}).`);
+      }
+      throw err;
+    }
+  }
+
+  /** Load the record + derivation, enforcing visibility. Throws 404 if not allowed. */
+  private async gatherEntityContext(
+    kind: AskEntityKind,
+    id: string,
+    actor: AuthedUser,
+  ): Promise<Record<string, unknown>> {
+    const privileged = actor.roles.includes('ADMIN') || actor.roles.includes('FINANCE');
+
+    if (kind === 'PROJECT') {
+      const project = await this.prisma.project.findFirst({
+        where: { id, deletedAt: null, ...visibilityWhere(actor) },
+        include: {
+          client: { select: { name: true, kind: true } },
+          endCustomer: { select: { name: true } },
+          owner: { select: { displayName: true } },
+          pm: { select: { displayName: true } },
+          milestones: {
+            select: { name: true, value: true, plannedDate: true, signedOffDate: true },
+          },
+        },
+      });
+      if (!project) throw new NotFoundException('Project not found or not visible to you.');
+      const pnl = await this.pnl.forProject(id);
+      return {
+        record: 'Project',
+        code: project.code,
+        name: project.name,
+        client: project.client?.name,
+        clientKind: project.client?.kind,
+        endCustomer: project.endCustomer?.name,
+        category: project.category,
+        billingModel: project.billingModel,
+        status: project.status,
+        whiteLabel: project.whiteLabel,
+        owner: project.owner?.displayName,
+        projectManager: project.pm?.displayName,
+        contractValue: project.contractValue?.toString(),
+        currency: project.contractCurrency,
+        budget: project.budget?.toString(),
+        plannedStart: project.plannedStart,
+        plannedEnd: project.plannedEnd,
+        milestones: project.milestones.map((m) => ({
+          name: m.name,
+          value: m.value.toString(),
+          plannedDate: m.plannedDate,
+          signedOff: !!m.signedOffDate,
+        })),
+        // The real P&L derivation — revenue, cost breakdown, margin.
+        pnl,
+      };
+    }
+
+    if (kind === 'EXPENSE') {
+      const e = await this.prisma.expense.findFirst({
+        where: { id, deletedAt: null },
+        include: {
+          user: { select: { id: true, displayName: true } },
+          project: { select: { id: true, code: true, name: true, ownerId: true, pmId: true } },
+          trip: { select: { id: true, daAmount: true, daCurrency: true } },
+          approver: { select: { displayName: true } },
+          ownerApprover: { select: { displayName: true } },
+          rejectedBy: { select: { displayName: true } },
+          receipts: {
+            select: {
+              ocrAmount: true,
+              exifTimestamp: true,
+              flags: { select: { kind: true, severity: true, detail: true } },
+            },
+          },
+        },
+      });
+      if (!e) throw new NotFoundException('Expense not found.');
+      const maySee =
+        privileged ||
+        e.userId === actor.id ||
+        e.project.ownerId === actor.id ||
+        e.project.pmId === actor.id;
+      if (!maySee) throw new NotFoundException('Expense not visible to you.');
+      return {
+        record: 'Expense',
+        submittedBy: e.user.displayName,
+        project: `${e.project.code} — ${e.project.name}`,
+        category: e.category,
+        amount: e.amount.toString(),
+        currency: e.currency,
+        incurredOn: e.incurredOn,
+        status: e.status,
+        notes: e.notes,
+        linkedTrip: e.trip
+          ? { daAmount: e.trip.daAmount?.toString(), daCurrency: e.trip.daCurrency }
+          : null,
+        ownerApprovedBy: e.ownerApprover?.displayName ?? null,
+        financeApprovedBy: e.approver?.displayName ?? null,
+        rejectedBy: e.rejectedBy?.displayName ?? null,
+        rejectReason: e.rejectReason,
+        receipts: e.receipts.map((r) => ({
+          ocrAmount: r.ocrAmount?.toString() ?? null,
+          exifTimestamp: r.exifTimestamp,
+          // The fraud signals are the derivation worth surfacing.
+          fraudFlags: r.flags.map((f) => ({ kind: f.kind, severity: f.severity, detail: f.detail })),
+        })),
+      };
+    }
+
+    // TRIP
+    const trip = await this.prisma.trip.findFirst({
+      where: { id },
+      include: {
+        travelRequest: {
+          select: {
+            userId: true,
+            travelClass: true,
+            tripType: true,
+            user: { select: { displayName: true, managerId: true } },
+            project: { select: { code: true, name: true } },
+            fromCity: { select: { name: true } },
+            toCity: { select: { name: true } },
+          },
+        },
+      },
+    });
+    if (!trip) throw new NotFoundException('Trip not found.');
+    const maySee =
+      privileged ||
+      trip.travelRequest.userId === actor.id ||
+      trip.travelRequest.user.managerId === actor.id;
+    if (!maySee) throw new NotFoundException('Trip not visible to you.');
+    return {
+      record: 'Trip',
+      traveller: trip.travelRequest.user.displayName,
+      project: trip.travelRequest.project
+        ? `${trip.travelRequest.project.code} — ${trip.travelRequest.project.name}`
+        : null,
+      from: trip.travelRequest.fromCity?.name,
+      to: trip.travelRequest.toCity?.name,
+      travelClass: trip.travelRequest.travelClass,
+      tripType: trip.travelRequest.tripType,
+      actualStart: trip.actualStart,
+      actualEnd: trip.actualEnd,
+      daEligibleDays: trip.daEligibleDays?.toString() ?? null,
+      daAmount: trip.daAmount?.toString() ?? null,
+      daCurrency: trip.daCurrency,
+      travelActualCost: trip.travelActualCost.toString(),
+      lodgingActualCost: trip.lodgingActualCost.toString(),
+      localConveyanceActualCost: trip.localConveyanceActualCost.toString(),
+      // Per-day DA derivation with reason codes (FULL_DAY / DEPARTURE_DAY / ...).
+      daBreakdown: trip.daBreakdown,
+    };
+  }
+
+  private askSystemPrompt(kind: AskEntityKind, context: Record<string, unknown>): string {
+    return `You are the in-product assistant for CES Tech's internal operations platform. You answer questions about ONE specific ${kind.toLowerCase()} record, shown below as JSON.
+
+RULES:
+- Answer ONLY from the record data below. Do not invent numbers, names, or policy.
+- When you state a number, cite where it comes from (e.g. "DA = ₹1,200 — from the DA breakdown's 2 full days") so the answer is traceable. This platform's promise is that every figure shows its derivation.
+- If the record doesn't contain the answer, say so plainly and suggest what to check. Never guess.
+- Be concise and concrete. Default currency is INR but always use the record's currency code. Use ₹ only when the currency is INR.
+- This is internal financial data; do not speculate about people's intent. Stick to what the evidence shows.
+
+THE RECORD:
+${JSON.stringify(context, null, 2)}`;
+  }
+
+  private mockAnswer(
+    kind: AskEntityKind,
+    question: string,
+    context: Record<string, unknown>,
+  ): string {
+    const headline =
+      kind === 'PROJECT'
+        ? `Project ${context.code ?? ''} — margin ${
+            (context.pnl as { marginPercent?: number } | undefined)?.marginPercent ?? '?'
+          }%`
+        : kind === 'EXPENSE'
+          ? `Expense of ${context.amount ?? '?'} ${context.currency ?? ''} (${context.status ?? ''})`
+          : `Trip DA ${context.daAmount ?? '?'} ${context.daCurrency ?? ''}`;
+    return `(Mock answer — set ANTHROPIC_API_KEY in apps/api/.env for real, grounded responses.)
+
+You asked: "${question}"
+
+Here's what this record shows: ${headline}. The full record (with its derivation) is loaded and would be sent to Claude to answer precisely and cite the numbers.`;
   }
 
   // ---------- Internals ----------

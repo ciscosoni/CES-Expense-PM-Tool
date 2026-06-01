@@ -11,6 +11,7 @@ import {
 } from '@/components/ui/table';
 import { serverFetch } from '@/lib/server-api';
 import { formatMoney } from '@/lib/format';
+import { AskAiDrawer } from '@/components/ask-ai-drawer';
 import type { PnlResult, ProjectBaseline } from '@/lib/types';
 
 export default async function ProjectPnlPage({ params }: { params: Promise<{ id: string }> }) {
@@ -32,6 +33,16 @@ export default async function ProjectPnlPage({ params }: { params: Promise<{ id:
 
   return (
     <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold tracking-tight">Project P&amp;L</h2>
+          <p className="text-sm text-muted-foreground">
+            Every figure is derived live from the underlying records.
+          </p>
+        </div>
+        <AskAiDrawer entityKind="PROJECT" entityId={id} title={`${ccy} P&L`} />
+      </div>
+
       <div className="grid gap-4 md:grid-cols-4">
         <StatCard
           index={0}

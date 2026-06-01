@@ -8,6 +8,7 @@ import { z } from 'zod';
 import { ChevronDown, ChevronRight, Plus, ScanLine, Send } from 'lucide-react';
 import { ReceiptUpload } from '@/components/expenses/receipt-upload';
 import { AiBadge } from '@/components/ai-badge';
+import { AskAiDrawer } from '@/components/ask-ai-drawer';
 import { toast } from 'sonner';
 import { AdminShell } from '@/components/admin-shell';
 import { Badge } from '@/components/ui/badge';
@@ -417,9 +418,16 @@ function ExpenseRow({
       {expanded && (
         <TableRow>
           <TableCell colSpan={6} className="bg-muted/30 p-4">
-            <p className="mb-2 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Receipts (anti-fraud detection runs on upload)
-            </p>
+            <div className="mb-2 flex items-center justify-between">
+              <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                Receipts (anti-fraud detection runs on upload)
+              </p>
+              <AskAiDrawer
+                entityKind="EXPENSE"
+                entityId={expense.id}
+                title={formatMoney(expense.amount, expense.currency)}
+              />
+            </div>
             <ReceiptUpload expenseId={expense.id} />
           </TableCell>
         </TableRow>
