@@ -16,6 +16,7 @@
     "clean": "rm -rf .expo .turbo *.tsbuildinfo"
   },
   "dependencies": {
+    "@babel/runtime": "^7.29.0",
     "@ces/domain": "workspace:*",
     "@expo/metro-runtime": "~4.0.1",
     "@expo/vector-icons": "^14.0.4",
@@ -36,6 +37,8 @@
     "@ces/tsconfig": "workspace:*",
     "@types/react": "~18.3.12",
     "eslint": "^9.14.0",
+    "eslint-plugin-react-hooks": "^5.2.0",
+    "globals": "^14.0.0",
     "typescript": "^5.6.3",
     "vitest": "^2.1.4"
   }
