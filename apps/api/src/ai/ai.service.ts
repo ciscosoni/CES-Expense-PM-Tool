@@ -13,12 +13,36 @@ import { PnlService } from '../projects/pnl.service.js';
 import { visibilityWhere } from '../projects/projects.service.js';
 import type { AuthedUser } from '../auth/index.js';
 import {
+  CommandResultSchema,
   ExpenseDraftSchema,
   OnboardingPlanSchema,
   type AskEntityKind,
+  type CommandResult,
   type ExpenseDraft,
   type OnboardingPlan,
 } from './ai.dto.js';
+
+/** Curated navigation catalog the NL command palette can route to. */
+const ROUTE_CATALOG: { href: string; label: string; desc: string }[] = [
+  { href: '/dashboard', label: 'Live Ops dashboard', desc: 'KPIs, portfolio P&L, utilization, anomalies' },
+  { href: '/projects', label: 'Projects', desc: 'all projects, status, P&L' },
+  { href: '/projects/onboard', label: 'AI project onboarding', desc: 'draft a project from an RFP/email' },
+  { href: '/tasks', label: 'My tasks', desc: 'assigned tasks across projects' },
+  { href: '/travel', label: 'Travel', desc: 'trips, DA, travel requests' },
+  { href: '/travel/inbox', label: 'Travel approvals', desc: 'approve/reject travel requests' },
+  { href: '/expenses', label: 'My expenses', desc: 'submit and track expenses' },
+  { href: '/expenses/inbox', label: 'Expense approvals', desc: 'owner/finance expense queues' },
+  { href: '/approvals', label: 'Approvals hub', desc: 'everything awaiting my approval, with SLA timers' },
+  { href: '/attendance', label: 'Attendance', desc: 'check-ins, geofence, attendance days' },
+  { href: '/attendance/inbox', label: 'Attendance regularization', desc: 'approve regularization requests' },
+  { href: '/finance/reimbursements', label: 'Reimbursement queue', desc: 'batch payouts, bank file' },
+  { href: '/finance/payslips', label: 'Payslip generator', desc: 'generate/preview payslips' },
+  { href: '/admin/cost-rates', label: 'Cost rates', desc: 'per-grade day cost (time-versioned)' },
+  { href: '/admin/entitlement-matrix', label: 'Entitlement matrix', desc: 'per-diem, lodging caps, travel class' },
+  { href: '/admin/da-policies', label: 'DA policies', desc: 'proration, intra-city rules' },
+  { href: '/admin/users', label: 'Users', desc: 'people, roles, grades' },
+  { href: '/admin/anomaly-rules', label: 'Anomaly rules', desc: 'fraud/anomaly detection config' },
+];
 
 /**
  * Owner-facing AI surface.
@@ -668,6 +692,105 @@ Output only the JSON object.`;
       projectCode,
       confidence: 'low',
       rationale: 'Heuristic mock — no AI key set.',
+    };
+  }
+
+  /**
+   * NL command palette (P5): a natural-language query → a short answer + up to 3
+   * relevant destinations from the route catalog. Read-only by design — mutating
+   * "do it for me" actions are P6 (Autonomous Agents), not this. Mock fallback.
+   */
+  async command(input: { query: string }): Promise<CommandResult & { source: 'claude' | 'mock' }> {
+    if (!this.client) {
+      const mock = this.mockCommand(input.query);
+      return { ...mock, source: 'mock' };
+    }
+
+    const system = `You are the command bar for CES Tech's internal operations platform. The user types a natural-language request; you reply with a SHORT answer (1–2 sentences) and suggest up to 3 destinations to navigate to.
+
+RULES:
+- Suggestions' "href" MUST be chosen from this catalog (never invent a path):
+${ROUTE_CATALOG.map((r) => `  - ${r.href} — ${r.label}: ${r.desc}`).join('\n')}
+- You CANNOT perform actions (approve, pay, edit). If the user asks to do something, point them to where they can — e.g. "approve expenses under ₹2k" → suggest /expenses/inbox and explain they can act there.
+- If it's a general question you can answer briefly, do so in "answer" and still suggest the most relevant page.
+- Keep "answer" concrete and free of fluff. Output only JSON for the schema.`;
+
+    try {
+      const params = {
+        model: this.model,
+        max_tokens: 800,
+        output_config: {
+          format: {
+            type: 'json_schema',
+            schema: {
+              type: 'object',
+              additionalProperties: false,
+              required: ['answer', 'suggestions'],
+              properties: {
+                answer: { type: 'string', maxLength: 800 },
+                suggestions: {
+                  type: 'array',
+                  maxItems: 3,
+                  items: {
+                    type: 'object',
+                    additionalProperties: false,
+                    required: ['label', 'href'],
+                    properties: {
+                      label: { type: 'string', maxLength: 120 },
+                      href: { type: 'string', enum: ROUTE_CATALOG.map((r) => r.href) },
+                    },
+                  },
+                },
+              },
+            },
+          },
+        },
+        system: [
+          { type: 'text' as const, text: system, cache_control: { type: 'ephemeral' as const } },
+        ],
+        messages: [{ role: 'user' as const, content: input.query }],
+      } satisfies Record<string, unknown>;
+      const response = await this.client.messages.create(
+        params as unknown as Anthropic.Messages.MessageCreateParamsNonStreaming,
+      );
+      const parsed = CommandResultSchema.safeParse(
+        this.safeParseJson(this.extractText(response)),
+      );
+      if (!parsed.success) {
+        return { ...this.mockCommand(input.query), source: 'mock' };
+      }
+      // Guard: drop any href not in the catalog.
+      const valid = new Set(ROUTE_CATALOG.map((r) => r.href));
+      const suggestions = parsed.data.suggestions.filter((s) => valid.has(s.href));
+      return { answer: parsed.data.answer, suggestions, source: 'claude' };
+    } catch (err) {
+      if (err instanceof Anthropic.APIError) {
+        this.logger.error(`Anthropic command error ${err.status}: ${err.message}`);
+        return { ...this.mockCommand(input.query), source: 'mock' };
+      }
+      throw err;
+    }
+  }
+
+  private mockCommand(query: string): CommandResult {
+    // Score each route by how many meaningful query words appear in its text.
+    const stop = new Set(['the', 'all', 'show', 'list', 'and', 'for', 'with', 'under', 'next']);
+    const words = Array.from(new Set(query.toLowerCase().match(/[a-z]{3,}/g) ?? [])).filter(
+      (w) => !stop.has(w),
+    );
+    const scored = ROUTE_CATALOG.map((r) => {
+      const hay = `${r.label} ${r.desc} ${r.href}`.toLowerCase();
+      return { r, score: words.filter((w) => hay.includes(w)).length };
+    })
+      .filter((x) => x.score > 0)
+      .sort((a, b) => b.score - a.score)
+      .slice(0, 3);
+    const suggestions = (scored.length ? scored.map((x) => x.r) : ROUTE_CATALOG.slice(0, 2)).map(
+      (r) => ({ label: r.label, href: r.href }),
+    );
+    return {
+      answer: `(Mock — set ANTHROPIC_API_KEY for real answers.) Most relevant places for "${query}".`,
+      suggestions,
     };
   }
 

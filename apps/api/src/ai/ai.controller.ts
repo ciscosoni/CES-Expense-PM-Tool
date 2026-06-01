@@ -3,7 +3,13 @@ import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, Roles, type AuthedUser } from '../auth/index.js';
 import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { AiService } from './ai.service.js';
-import { AskDto, CommitOnboardingDto, ExtractDto, GenerateOnboardingDto } from './ai.dto.js';
+import {
+  AskDto,
+  CommandDto,
+  CommitOnboardingDto,
+  ExtractDto,
+  GenerateOnboardingDto,
+} from './ai.dto.js';
 
 @ApiTags('AI')
 @ApiBearerAuth()
@@ -48,5 +54,14 @@ export class AiController {
   })
   extractExpense(@Body() body: ExtractDto) {
     return this.ai.extractExpense(body);
+  }
+
+  @Post('command')
+  @ApiOperation({
+    summary:
+      'Natural-language command bar: a query → a short answer + suggested destinations (read-only; no mutating actions).',
+  })
+  command(@Body() body: CommandDto) {
+    return this.ai.command(body);
   }
 }

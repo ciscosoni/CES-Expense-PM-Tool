@@ -2,9 +2,16 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import { Sparkles, Search, ArrowRight } from 'lucide-react';
+import { Sparkles, Search, ArrowRight, CornerDownLeft } from 'lucide-react';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { api, ApiError } from '@/lib/api';
 import { cn } from '@/lib/cn';
+
+interface CommandResult {
+  answer: string;
+  suggestions: { label: string; href: string }[];
+  source: 'claude' | 'mock';
+}
 
 interface PaletteItem {
   id: string;
@@ -83,6 +90,8 @@ const ITEMS: PaletteItem[] = [
 export function CommandPalette() {
   const [open, setOpen] = React.useState(false);
   const [query, setQuery] = React.useState('');
+  const [aiBusy, setAiBusy] = React.useState(false);
+  const [ai, setAi] = React.useState<CommandResult | null>(null);
   const router = useRouter();
 
   React.useEffect(() => {
@@ -97,6 +106,41 @@ export function CommandPalette() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, []);
+
+  // Reset the AI panel whenever the palette closes or the query is cleared.
+  React.useEffect(() => {
+    if (!open) {
+      setAi(null);
+      setQuery('');
+    }
+  }, [open]);
+
+  const go = React.useCallback(
+    (href: string) => {
+      setOpen(false);
+      router.push(href);
+    },
+    [router],
+  );
+
+  async function runCommand() {
+    const q = query.trim();
+    if (q.length < 2 || aiBusy) return;
+    setAiBusy(true);
+    setAi(null);
+    try {
+      const res = await api.post<CommandResult>('/ai/command', { query: q });
+      setAi(res);
+    } catch (err) {
+      setAi({
+        answer: err instanceof ApiError ? err.message : 'Could not reach the assistant.',
+        suggestions: [],
+        source: 'mock',
+      });
+    } finally {
+      setAiBusy(false);
+    }
+  }
 
   const filtered = React.useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -127,7 +171,13 @@ export function CommandPalette() {
               autoFocus
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="Jump to anything — type a page name…"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  void runCommand();
+                }
+              }}
+              placeholder="Jump to a page, or ask anything and press ↵…"
               className="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted-foreground focus:outline-none"
             />
             <kbd className="rounded border border-border/80 bg-secondary px-1.5 py-0.5 text-[10px] text-muted-foreground">
@@ -135,8 +185,56 @@ export function CommandPalette() {
             </kbd>
           </div>
           <div className="max-h-80 overflow-y-auto p-2">
-            {grouped.length === 0 && (
-              <p className="px-3 py-6 text-center text-sm text-muted-foreground">No matches.</p>
+            {query.trim().length >= 2 && (
+              <button
+                type="button"
+                onClick={() => void runCommand()}
+                disabled={aiBusy}
+                className="mb-2 flex w-full items-center gap-2 rounded-md border border-[hsl(var(--ai-via)/0.35)] bg-[hsl(var(--ai-via)/0.06)] px-2.5 py-2 text-left text-sm hover:bg-[hsl(var(--ai-via)/0.12)]"
+              >
+                <Sparkles className="h-4 w-4 shrink-0 text-[hsl(var(--ai-via))]" />
+                <span className="flex-1 truncate">
+                  {aiBusy ? 'Asking AI…' : <>Ask AI: &ldquo;{query.trim()}&rdquo;</>}
+                </span>
+                <kbd className="flex items-center gap-1 rounded border border-border/80 bg-background px-1 py-0.5 text-[10px] text-muted-foreground">
+                  <CornerDownLeft className="h-3 w-3" />
+                </kbd>
+              </button>
+            )}
+
+            {ai && (
+              <div className="mb-2 space-y-2 rounded-md border bg-card p-3">
+                <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">
+                  {ai.answer}
+                </p>
+                {ai.suggestions.length > 0 && (
+                  <ul className="space-y-1">
+                    {ai.suggestions.map((s) => (
+                      <li key={s.href}>
+                        <button
+                          type="button"
+                          onClick={() => go(s.href)}
+                          className="flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm text-foreground/90 hover:bg-accent hover:text-foreground"
+                        >
+                          <span>{s.label}</span>
+                          <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {ai.source === 'mock' && (
+                  <p className="text-[10px] uppercase tracking-wide text-amber-500/80">
+                    Mock — set ANTHROPIC_API_KEY for real answers
+                  </p>
+                )}
+              </div>
+            )}
+
+            {grouped.length === 0 && !ai && !aiBusy && (
+              <p className="px-3 py-6 text-center text-sm text-muted-foreground">
+                No page matches — press ↵ to ask AI.
+              </p>
             )}
             {grouped.map(([group, items]) => (
               <div key={group} className="mb-2">
@@ -148,10 +246,7 @@ export function CommandPalette() {
                     <li key={it.id}>
                       <button
                         type="button"
-                        onClick={() => {
-                          setOpen(false);
-                          router.push(it.href);
-                        }}
+                        onClick={() => go(it.href)}
                         className={cn(
                           'flex w-full items-center justify-between gap-2 rounded-md px-2 py-1.5 text-sm',
                           'text-foreground/90 hover:bg-accent hover:text-foreground',

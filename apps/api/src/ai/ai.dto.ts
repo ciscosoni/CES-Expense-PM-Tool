@@ -105,6 +105,24 @@ export const ExtractSchema = z.object({
 export class ExtractDto extends createZodDto(ExtractSchema) {}
 export interface ExtractDto extends z.infer<typeof ExtractSchema> {}
 
+// ----- NL command palette: natural-language query → answer + navigation (P5) -----
+
+export const CommandSchema = z.object({
+  query: z.string().min(2, 'Type a command or question').max(500),
+});
+export class CommandDto extends createZodDto(CommandSchema) {}
+export interface CommandDto extends z.infer<typeof CommandSchema> {}
+
+/** Read-only result: a short answer + up to 3 suggested destinations. */
+export const CommandResultSchema = z.object({
+  answer: z.string().max(800).default(''),
+  suggestions: z
+    .array(z.object({ label: z.string().max(120), href: z.string().max(200) }))
+    .max(3)
+    .default([]),
+});
+export type CommandResult = z.infer<typeof CommandResultSchema>;
+
 /** The drafted expense the UI pre-fills (the user confirms before saving). */
 export const ExpenseDraftSchema = z.object({
   category: z.enum([
