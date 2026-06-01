@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { Download, IndianRupee, TrendingUp, Users } from 'lucide-react';
+import { CalendarCheck, Download, IndianRupee, Plane, TrendingUp, Users } from 'lucide-react';
 import { AdminShell } from '@/components/admin-shell';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -31,6 +31,20 @@ const REPORTS: {
     href: '/api/reports/reimbursements.xlsx',
     icon: <IndianRupee className="h-5 w-5" />,
   },
+  {
+    title: 'Attendance summary',
+    description:
+      'Current-month attendance per engineer — active days, on-site days and hours, derived from geofenced events.',
+    href: '/api/reports/attendance.xlsx',
+    icon: <CalendarCheck className="h-5 w-5" />,
+  },
+  {
+    title: 'Travel spend',
+    description:
+      'Per-trip cost breakdown — travel, lodging, DA and local conveyance — with totals for travel-budget review.',
+    href: '/api/reports/travel-spend.xlsx',
+    icon: <Plane className="h-5 w-5" />,
+  },
 ];
 
 export default function ReportsPage() {
@@ -60,8 +74,8 @@ export default function ReportsPage() {
         ))}
       </div>
       <p className="mt-4 text-xs text-muted-foreground">
-        Exports are generated on demand from live data and respect your role. More reports
-        (attendance, travel spend) and a Tally / bank-file export are on the way.
+        Exports are generated on demand from live data and respect your role. A Tally-format
+        reimbursement export for accounting is on the way.
       </p>
     </AdminShell>
   );

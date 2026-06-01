@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { Decimal } from '@prisma/client/runtime/library';
 import { exportRowsToBuffer } from '@ces/excel';
 import { PrismaService } from '../prisma.service.js';
 import { DashboardsService } from '../dashboards/dashboards.service.js';
@@ -93,6 +94,111 @@ export class ReportsService {
         { header: 'Status', key: 'status', width: 12 },
         { header: 'Expenses', key: 'expenses', width: 10 },
         { header: 'Paid on', key: 'paidOn', width: 14 },
+      ],
+      rows,
+    });
+  }
+
+  /** Attendance summary for the current month — one row per engineer. */
+  async attendanceSummaryXlsx(): Promise<Buffer> {
+    const now = new Date();
+    const monthStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+    const monthEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 0));
+    const days = await this.prisma.attendanceDay.findMany({
+      where: { date: { gte: monthStart, lte: monthEnd } },
+      include: { user: { select: { displayName: true, email: true } } },
+    });
+    const byUser = new Map<
+      string,
+      { name: string; email: string; activeDays: number; onSiteDays: number; minutes: number; last: string }
+    >();
+    for (const d of days) {
+      const g = byUser.get(d.userId) ?? {
+        name: d.user.displayName,
+        email: d.user.email,
+        activeDays: 0,
+        onSiteDays: 0,
+        minutes: 0,
+        last: '',
+      };
+      g.activeDays += 1;
+      if (d.status === 'ON_SITE') g.onSiteDays += 1;
+      g.minutes += d.onSiteMinutes;
+      const dk = d.date.toISOString().slice(0, 10);
+      if (dk > g.last) g.last = dk;
+      byUser.set(d.userId, g);
+    }
+    const rows = [...byUser.values()].map((g) => ({
+      name: g.name,
+      email: g.email,
+      activeDays: g.activeDays,
+      onSiteDays: g.onSiteDays,
+      onSiteHours: Math.round((g.minutes / 60) * 10) / 10,
+      lastDay: g.last,
+    }));
+    return exportRowsToBuffer({
+      sheetName: `Attendance ${monthStart.toISOString().slice(0, 7)}`,
+      columns: [
+        { header: 'Engineer', key: 'name', width: 26 },
+        { header: 'Email', key: 'email', width: 30 },
+        { header: 'Active days', key: 'activeDays', width: 12 },
+        { header: 'On-site days', key: 'onSiteDays', width: 12 },
+        { header: 'On-site hours', key: 'onSiteHours', width: 14 },
+        { header: 'Last activity', key: 'lastDay', width: 14 },
+      ],
+      rows,
+    });
+  }
+
+  /** Travel spend — one row per closed/active trip with cost breakdown. */
+  async travelSpendXlsx(): Promise<Buffer> {
+    const trips = await this.prisma.trip.findMany({
+      orderBy: { actualStart: 'desc' },
+      include: {
+        travelRequest: {
+          select: {
+            user: { select: { displayName: true } },
+            project: { select: { code: true } },
+            fromCity: { select: { name: true } },
+            toCity: { select: { name: true } },
+          },
+        },
+      },
+    });
+    const rows = trips.map((t) => {
+      const da = t.daAmount ?? new Decimal(0);
+      const total = new Decimal(t.travelActualCost)
+        .plus(t.lodgingActualCost)
+        .plus(t.localConveyanceActualCost)
+        .plus(da);
+      return {
+        traveller: t.travelRequest.user.displayName,
+        project: t.travelRequest.project?.code ?? '—',
+        route: `${t.travelRequest.fromCity?.name ?? '?'} → ${t.travelRequest.toCity?.name ?? '?'}`,
+        start: t.actualStart.toISOString().slice(0, 10),
+        end: t.actualEnd ? t.actualEnd.toISOString().slice(0, 10) : '',
+        travel: t.travelActualCost.toString(),
+        lodging: t.lodgingActualCost.toString(),
+        da: da.toString(),
+        local: t.localConveyanceActualCost.toString(),
+        total: total.toFixed(2),
+        currency: t.daCurrency ?? 'INR',
+      };
+    });
+    return exportRowsToBuffer({
+      sheetName: 'Travel spend',
+      columns: [
+        { header: 'Traveller', key: 'traveller', width: 24 },
+        { header: 'Project', key: 'project', width: 16 },
+        { header: 'Route', key: 'route', width: 28 },
+        { header: 'Start', key: 'start', width: 12 },
+        { header: 'End', key: 'end', width: 12 },
+        { header: 'Travel', key: 'travel', width: 14 },
+        { header: 'Lodging', key: 'lodging', width: 14 },
+        { header: 'DA', key: 'da', width: 14 },
+        { header: 'Local', key: 'local', width: 14 },
+        { header: 'Total', key: 'total', width: 16 },
+        { header: 'Currency', key: 'currency', width: 10 },
       ],
       rows,
     });

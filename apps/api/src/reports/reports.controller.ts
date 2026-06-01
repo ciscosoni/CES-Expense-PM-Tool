@@ -41,4 +41,18 @@ export class ReportsController {
   async reimbursements(@Res() res: Response): Promise<void> {
     this.send(res, 'reimbursements.xlsx', await this.reports.reimbursementsXlsx());
   }
+
+  @Get('attendance.xlsx')
+  @Roles('ADMIN', 'FINANCE')
+  @ApiOperation({ summary: 'Current-month attendance summary as .xlsx.' })
+  async attendance(@Res() res: Response): Promise<void> {
+    this.send(res, 'attendance.xlsx', await this.reports.attendanceSummaryXlsx());
+  }
+
+  @Get('travel-spend.xlsx')
+  @Roles('ADMIN', 'FINANCE')
+  @ApiOperation({ summary: 'Travel spend (per trip, with cost breakdown) as .xlsx.' })
+  async travelSpend(@Res() res: Response): Promise<void> {
+    this.send(res, 'travel-spend.xlsx', await this.reports.travelSpendXlsx());
+  }
 }
