@@ -15,6 +15,7 @@ import { PnlService } from '../projects/pnl.service.js';
  */
 const BRIEF_CRON = process.env.DAILY_BRIEF_CRON ?? '0 8 * * 1-5'; // 08:00, weekdays
 const NUDGE_CRON = process.env.ANOMALY_NUDGE_CRON ?? '15 2 * * *'; // 02:15, after the sweep
+const STANDUP_CRON = process.env.STANDUP_CRON ?? '30 9 * * 1-5'; // 09:30, weekdays
 /** Margin RAG bands — mirrors the P&L page (red < 15%, amber < 30%). */
 const MARGIN_RED = 15;
 /** An approval pending longer than this (days) is "aging" and surfaces in briefs. */
@@ -213,6 +214,126 @@ export class AgentsService {
     }
     this.logger.log(`Anomaly nudges: ${nudged} routed (${open.length} open)`);
     return { open: open.length, nudged };
+  }
+
+  @Cron(STANDUP_CRON, { name: 'standup-digest' })
+  async scheduledStandup(): Promise<void> {
+    if (this.enabled) await this.runStandupDigest();
+  }
+
+  /**
+   * Daily-standup agent: rolls up the most recent activity day's time logs into a
+   * per-project digest (to the PM + owner) and a leadership roll-up (to admins) —
+   * auto-written, so nobody has to compile standups. Summarises the latest day
+   * with activity up to `target` (so Monday's run covers Friday).
+   */
+  async runStandupDigest(target?: Date): Promise<{ day: string | null; digests: number }> {
+    const upTo = target ?? new Date();
+    const weekAgo = new Date(upTo.getTime() - 7 * 86_400_000);
+    const latest = await this.prisma.timeLog.findFirst({
+      where: { date: { lte: upTo, gte: weekAgo } },
+      orderBy: { date: 'desc' },
+      select: { date: true },
+    });
+    if (!latest) return { day: null, digests: 0 };
+
+    const dayStart = new Date(
+      Date.UTC(latest.date.getUTCFullYear(), latest.date.getUTCMonth(), latest.date.getUTCDate()),
+    );
+    const dayEnd = new Date(dayStart.getTime() + 86_400_000);
+    const day = dayStart.toISOString().slice(0, 10);
+
+    const logs = await this.prisma.timeLog.findMany({
+      where: { date: { gte: dayStart, lt: dayEnd } },
+      select: {
+        hours: true,
+        notes: true,
+        user: { select: { displayName: true } },
+        task: {
+          select: { name: true, project: { select: { id: true, code: true, name: true, pmId: true, ownerId: true } } },
+        },
+      },
+    });
+    if (!logs.length) return { day, digests: 0 };
+
+    // Group by project.
+    const byProject = new Map<
+      string,
+      { code: string; name: string; pmId: string; ownerId: string | null; hours: number; lines: string[] }
+    >();
+    for (const l of logs) {
+      const p = l.task.project;
+      const g = byProject.get(p.id) ?? {
+        code: p.code,
+        name: p.name,
+        pmId: p.pmId,
+        ownerId: p.ownerId,
+        hours: 0,
+        lines: [],
+      };
+      g.hours += Number(l.hours);
+      g.lines.push(`${l.user.displayName} — ${Number(l.hours)}h on "${l.task.name}"${l.notes ? `: ${l.notes}` : ''}`);
+      byProject.set(p.id, g);
+    }
+
+    let digests = 0;
+    const rollup: string[] = [];
+    for (const [projectId, g] of byProject) {
+      rollup.push(`${g.code}: ${Math.round(g.hours * 10) / 10}h across ${g.lines.length} update(s)`);
+      const fallback = `Standup for ${g.code} (${day}) — ${Math.round(g.hours * 10) / 10}h logged:\n${g.lines
+        .map((x) => `• ${x}`)
+        .join('\n')}`;
+      const body = await this.ai.narrate({
+        system: `You write a crisp daily standup digest for a project at CES Tech. 2–4 lines: what moved yesterday, who did what, and any apparent blocker. Plain and specific. No greetings.`,
+        facts: `Project ${g.code} — ${g.name}, ${day}\nTime logs:\n${g.lines.join('\n')}`,
+        fallback,
+        maxTokens: 400,
+      });
+      const recipients = [g.pmId, g.ownerId].filter((x): x is string => !!x);
+      await this.notifications.notifyMany(recipients, {
+        kind: 'STANDUP_DIGEST',
+        title: `Standup · ${g.code} · ${day}`,
+        body,
+        severity: 'INFO',
+        entityKind: 'PROJECT',
+        entityId: projectId,
+        linkPath: `/projects/${projectId}/tasks`,
+      });
+      digests += recipients.length;
+    }
+
+    // Leadership roll-up.
+    const admins = await this.prisma.user.findMany({
+      where: { active: true, deletedAt: null, roles: { has: 'ADMIN' } },
+      select: { id: true },
+    });
+    if (admins.length) {
+      const totalHours = [...byProject.values()].reduce((s, g) => s + g.hours, 0);
+      const leadFallback = `${day}: ${byProject.size} project(s) active, ${Math.round(totalHours * 10) / 10}h logged.\n${rollup
+        .map((x) => `• ${x}`)
+        .join('\n')}`;
+      const leadBody = await this.ai.narrate({
+        system: `You write a one-paragraph leadership roll-up of the day's delivery activity across projects at CES Tech. Lead with the headline number, then call out the busiest projects. Plain, no fluff.`,
+        facts: `${day}\nPer project:\n${rollup.join('\n')}`,
+        fallback: leadFallback,
+        maxTokens: 400,
+      });
+      await this.notifications.notifyMany(
+        admins.map((a) => a.id),
+        {
+          kind: 'STANDUP_LEADERSHIP',
+          title: `Delivery roll-up · ${day}`,
+          body: leadBody,
+          severity: 'INFO',
+          entityKind: 'BRIEF',
+          linkPath: '/dashboard',
+        },
+      );
+      digests += admins.length;
+    }
+
+    this.logger.log(`Standup digest for ${day}: ${byProject.size} projects, ${digests} notifications`);
+    return { day, digests };
   }
 
   /** Map an anomaly's offending entity to the user(s) who should act on it. */

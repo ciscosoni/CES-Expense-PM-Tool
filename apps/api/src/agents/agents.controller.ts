@@ -22,4 +22,11 @@ export class AgentsController {
   runAnomalyNudges() {
     return this.agents.runAnomalyNudges();
   }
+
+  @Post('standup/run')
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Run the standup-digest agent now (admin) — summarises the latest activity day.' })
+  runStandup() {
+    return this.agents.runStandupDigest();
+  }
 }
