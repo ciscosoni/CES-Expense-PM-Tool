@@ -9,6 +9,7 @@ import { PrismaService } from '../prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { stripUndefined } from '../common/strip-undefined.js';
 import type { AuthedUser } from '../auth/index.js';
+import { visibilityWhere } from '../projects/projects.service.js';
 import type { CreateTaskDto, CreateTimeLogDto, UpdateTaskDto } from './task.dto.js';
 
 const TASK = 'Task';
@@ -186,6 +187,80 @@ export class TasksService {
       },
       orderBy: { date: 'desc' },
     });
+  }
+
+  /**
+   * Aggregated timesheet across users/projects, visibility-scoped. Managers
+   * (ADMIN/FINANCE/OWNER/PM) see team logs for the projects they can see;
+   * a plain engineer sees only their own. Returns enriched rows + summary.
+   */
+  async listTimeLogs(
+    actor: AuthedUser,
+    opts: {
+      dateFrom?: string | undefined;
+      dateTo?: string | undefined;
+      projectId?: string | undefined;
+      userId?: string | undefined;
+      billable?: boolean | undefined;
+    },
+  ) {
+    const isManagerial = actor.roles.some((r) =>
+      ['ADMIN', 'FINANCE', 'PROJECT_OWNER', 'PROJECT_MANAGER'].includes(r),
+    );
+    const effectiveUserId = isManagerial ? opts.userId : actor.id;
+
+    const date: Prisma.DateTimeFilter = {};
+    if (opts.dateFrom) date.gte = new Date(opts.dateFrom);
+    if (opts.dateTo) date.lte = new Date(opts.dateTo);
+
+    const taskWhere: Prisma.TaskWhereInput = { project: visibilityWhere(actor) };
+    if (opts.projectId) taskWhere.projectId = opts.projectId;
+
+    const logs = await this.prisma.timeLog.findMany({
+      where: {
+        task: taskWhere,
+        ...(Object.keys(date).length ? { date } : {}),
+        ...(effectiveUserId ? { userId: effectiveUserId } : {}),
+        ...(opts.billable !== undefined ? { billable: opts.billable } : {}),
+      },
+      include: {
+        user: { select: { id: true, displayName: true } },
+        task: {
+          select: { id: true, name: true, project: { select: { id: true, code: true, name: true } } },
+        },
+      },
+      orderBy: { date: 'desc' },
+      take: 500,
+    });
+
+    let totalHours = 0;
+    let billableHours = 0;
+    for (const l of logs) {
+      const h = Number(l.hours);
+      totalHours += h;
+      if (l.billable) billableHours += h;
+    }
+    const round2 = (n: number) => Math.round(n * 100) / 100;
+
+    return {
+      logs: logs.map((l) => ({
+        id: l.id,
+        date: l.date,
+        hours: Number(l.hours),
+        billable: l.billable,
+        notes: l.notes,
+        user: l.user,
+        taskName: l.task.name,
+        project: l.task.project,
+      })),
+      summary: {
+        count: logs.length,
+        totalHours: round2(totalHours),
+        billableHours: round2(billableHours),
+        billablePercent: totalHours > 0 ? Math.round((billableHours / totalHours) * 100) : 0,
+        capped: logs.length >= 500,
+      },
+    };
   }
 }
 

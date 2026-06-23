@@ -93,4 +93,23 @@ export class TasksController {
   ) {
     return this.tasks.listTimeLogsForUser(user.id, { dateFrom, dateTo });
   }
+
+  @Get('time-logs')
+  @ApiOperation({ summary: 'Aggregated timesheet (visibility-scoped) with filters + totals' })
+  timesheet(
+    @CurrentUser() user: AuthedUser,
+    @Query('dateFrom') dateFrom?: string,
+    @Query('dateTo') dateTo?: string,
+    @Query('projectId') projectId?: string,
+    @Query('userId') userId?: string,
+    @Query('billable') billable?: string,
+  ) {
+    return this.tasks.listTimeLogs(user, {
+      dateFrom,
+      dateTo,
+      projectId,
+      userId,
+      billable: billable === undefined || billable === '' ? undefined : billable === 'true',
+    });
+  }
 }
