@@ -4,6 +4,7 @@ import * as React from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { PublicClientApplication } from '@azure/msal-browser';
 import { MsalProvider } from '@azure/msal-react';
+import { ThemeProvider } from 'next-themes';
 import { getMsalConfig, isEntraConfigured } from '@/lib/msal';
 import { Toaster } from './ui/sonner';
 
@@ -41,10 +42,17 @@ export function Providers({ children }: { children: React.ReactNode }) {
   );
 
   const tree = (
-    <QueryClientProvider client={client}>
-      {children}
-      <Toaster />
-    </QueryClientProvider>
+    <ThemeProvider
+      attribute="class"
+      defaultTheme="light"
+      enableSystem={false}
+      disableTransitionOnChange
+    >
+      <QueryClientProvider client={client}>
+        {children}
+        <Toaster />
+      </QueryClientProvider>
+    </ThemeProvider>
   );
 
   return isEntraConfigured() ? <EntraProvider>{tree}</EntraProvider> : tree;

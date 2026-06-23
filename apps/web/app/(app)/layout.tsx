@@ -1,6 +1,7 @@
 import { Sidebar } from '@/components/sidebar';
 import { CommandPalette } from '@/components/command-palette';
 import { NotificationBell } from '@/components/notification-bell';
+import { ThemeToggle } from '@/components/theme-toggle';
 import { requireUser } from '@/lib/current-user';
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -20,6 +21,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             </span>
           </div>
           <div className="flex items-center gap-1.5">
+            <ThemeToggle />
             <NotificationBell />
             <CommandPalette />
           </div>
