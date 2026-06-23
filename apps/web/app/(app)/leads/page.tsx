@@ -1,20 +1,9 @@
-import { Target } from 'lucide-react';
-import { ModulePlaceholder } from '@/components/module-placeholder';
+import { LeadsBoard, type Board } from '@/components/leads-board';
+import { serverFetch } from '@/lib/server-api';
 
 export const dynamic = 'force-dynamic';
 
-export default function LeadsPage() {
-  return (
-    <ModulePlaceholder
-      title="Leads"
-      description="Sales pipeline — deals, lead contacts, and conversion to clients/projects."
-      icon={Target}
-      points={[
-        'Kanban deal board with pipeline stages (Generated → Qualified → Proposal Sent → Win / Lost)',
-        'Lead contacts: company, owner, category, value, contact details',
-        'Multiple named pipelines, lead sources & categories',
-        'Convert a won deal into a client + project (feeds onboarding)',
-      ]}
-    />
-  );
+export default async function LeadsPage() {
+  const board = await serverFetch<Board>('/leads/board').catch(() => null);
+  return <LeadsBoard initial={board} />;
 }

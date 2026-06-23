@@ -55,6 +55,7 @@ model User {
   leaves               Leave[]      @relation("UserLeaves")
   approvedLeaves       Leave[]      @relation("LeaveApprover")
   activeTimer          ActiveTimer? @relation("UserTimer")
+  ownedLeads           Lead[]       @relation("LeadOwner")
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
   deletedAt     DateTime?
@@ -884,6 +885,10 @@ model AutoApprovalPolicy {
   id             String   @id @default(uuid()) @db.Uuid
   /// When false, no auto-approvable suggestions are surfaced.
   enabled        Boolean  @default(true)
+  /// Kill switch for *confident* auto-approval (P10 #4). When true, clean expenses
+  /// that pass the policy are auto-advanced through the OWNER step (Finance still
+  /// reviews). Default OFF — suggest-only stays the default behaviour.
+  autoApprove    Boolean  @default(false)
   /// Max expense amount eligible (compared in the same currency).
   maxAmount      Decimal  @db.Decimal(14, 4)
   currency       String   @default("INR") @db.Char(3)
@@ -1064,4 +1069,46 @@ model ActiveTimer {
   task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
   startedAt DateTime @default(now())
   note      String?
+}
+
+// ---------------------------------------------------------------------------
+// CRM — Leads (Workway parity). A lead/deal moves through pipeline stages and,
+// on WIN, can be converted into a Client + Project (feeds onboarding).
+// ---------------------------------------------------------------------------
+enum LeadStage {
+  GENERATED
+  QUALIFIED
+  INITIAL_CONTACT
+  SCHEDULE_APPOINTMENT
+  PROPOSAL_SENT
+  WIN
+  LOST
+}
+
+model Lead {
+  id            String    @id @default(uuid()) @db.Uuid
+  companyName   String
+  contactName   String?
+  email         String?
+  mobile        String?
+  stage         LeadStage @default(GENERATED)
+  /// Estimated deal value (advisory input; revenue is still computed in P&L).
+  value         Decimal?  @db.Decimal(14, 2)
+  currency      String    @default("INR") @db.Char(3)
+  source        String?
+  category      String?
+  ownerId       String?   @db.Uuid
+  owner         User?     @relation("LeadOwner", fields: [ownerId], references: [id])
+  notes         String?
+  // ---- conversion ----
+  convertedClientId  String?   @db.Uuid
+  convertedProjectId String?   @db.Uuid
+  wonAt         DateTime?
+  lostReason    String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  deletedAt     DateTime?
+
+  @@index([stage])
+  @@index([ownerId])
 }

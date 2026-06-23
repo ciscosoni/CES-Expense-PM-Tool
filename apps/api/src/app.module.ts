@@ -44,6 +44,7 @@ import { LeaveModule } from './leave/leave.module.js';
 import { VendorsModule } from './vendors/vendors.module.js';
 import { TimerModule } from './timer/timer.module.js';
 import { InvoicesModule } from './invoices/invoices.module.js';
+import { LeadsModule } from './leads/leads.module.js';
 
 const isProd = process.env.NODE_ENV === 'production';
 
@@ -129,6 +130,7 @@ const isProd = process.env.NODE_ENV === 'production';
     VendorsModule,
     TimerModule,
     InvoicesModule,
+    LeadsModule,
   ],
   controllers: [HealthController],
   providers: [
