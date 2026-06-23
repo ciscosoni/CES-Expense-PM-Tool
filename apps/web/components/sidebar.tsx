@@ -12,6 +12,7 @@ import {
   CreditCard,
   FileBarChart,
   FolderKanban,
+  GanttChartSquare,
   Globe2,
   KanbanSquare,
   LayoutDashboard,
@@ -112,6 +113,12 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
         label: 'Taskboard',
         icon: KanbanSquare,
         roles: ['ENGINEER', 'PROJECT_MANAGER', 'PROJECT_OWNER', 'ADMIN'],
+      },
+      {
+        href: '/roadmap',
+        label: 'Roadmap',
+        icon: GanttChartSquare,
+        roles: ['ADMIN', 'PROJECT_MANAGER', 'PROJECT_OWNER'],
       },
       {
         href: '/timesheets',
