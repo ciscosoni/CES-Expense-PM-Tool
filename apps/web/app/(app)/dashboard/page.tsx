@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import {
   AlertTriangle,
+  ArrowRight,
   ArrowUpRight,
   FolderKanban,
   IndianRupee,
@@ -9,12 +10,14 @@ import {
   Timer,
   TrendingDown,
   TrendingUp,
+  Users,
 } from 'lucide-react';
 import { AdminShell } from '@/components/admin-shell';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { StatCard } from '@/components/stat-card';
 import { AiBadge } from '@/components/ai-badge';
+import { PortfolioAskDrawer } from '@/components/portfolio-ask-drawer';
 import {
   Table,
   TableBody,
@@ -83,8 +86,39 @@ interface ForecastSummary {
   marginsEroding: number;
   marginsCritical: number;
   overbookedNextMonth: number;
+  benchAvailableNextMonth: number;
+  staffingMovesSuggested: number;
   expenseSpike: boolean;
   wellbeingAtRisk: number;
+}
+
+interface CapacityRow {
+  userId: string;
+  userName: string;
+  gradeCode: string;
+  gradeRank: number;
+  allocatedPercent: number;
+  sparePercent: number;
+  status: 'OVERBOOKED' | 'FULL' | 'AVAILABLE' | 'BENCH';
+}
+
+interface StaffingMove {
+  allocationId: string;
+  projectCode: string;
+  percent: number;
+  fromUserName: string;
+  toUserName: string;
+  gradeMatch: 'EXACT' | 'ADJACENT';
+  costDeltaPerDay: number | null;
+  currency: string;
+  reasons: string[];
+}
+
+interface StaffingPlan {
+  window: { start: string; end: string };
+  capacity: CapacityRow[];
+  moves: StaffingMove[];
+  reasons: string[];
 }
 
 interface MarginForecastRow {
@@ -106,16 +140,16 @@ interface WellbeingRow {
 }
 
 const RISK_TONE: Record<string, string> = {
-  CRITICAL: 'border-red-500/30 bg-red-500/10 text-red-300',
-  HIGH: 'border-amber-500/30 bg-amber-500/10 text-amber-300',
-  MEDIUM: 'border-amber-500/20 bg-amber-500/5 text-amber-200',
-  LOW: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
+  CRITICAL: 'border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300',
+  HIGH: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300',
+  MEDIUM: 'border-amber-500/20 bg-amber-500/5 text-amber-800 dark:text-amber-200',
+  LOW: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
 };
 
 const STATUS_TONE: Record<'green' | 'amber' | 'red' | 'gray', string> = {
-  green: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300',
-  amber: 'border-amber-500/30 bg-amber-500/10 text-amber-300',
-  red: 'border-red-500/30 bg-red-500/10 text-red-300',
+  green: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300',
+  amber: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300',
+  red: 'border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300',
   gray: 'border-border bg-secondary text-muted-foreground',
 };
 
@@ -133,7 +167,7 @@ function trendLine(value: number, steps = 10, jitter = 0.08): number[] {
 }
 
 export default async function DashboardPage() {
-  const [kpis, portfolio, utilization, anomalies, openAnomalies, fcSummary, fcMargins, fcWellbeing] =
+  const [kpis, portfolio, utilization, anomalies, openAnomalies, fcSummary, fcMargins, fcWellbeing, fcStaffing] =
     await Promise.all([
       serverFetch<Kpis>('/dashboards/kpis'),
       serverFetch<PortfolioRow[]>('/dashboards/portfolio'),
@@ -144,6 +178,7 @@ export default async function DashboardPage() {
       serverFetch<ForecastSummary>('/forecast/summary').catch(() => null),
       serverFetch<MarginForecastRow[]>('/forecast/margins').catch(() => [] as MarginForecastRow[]),
       serverFetch<WellbeingRow[]>('/forecast/wellbeing').catch(() => [] as WellbeingRow[]),
+      serverFetch<StaffingPlan>('/forecast/staffing').catch(() => null),
     ]);
 
   const dataQuality = await serverFetch<{
@@ -162,6 +197,11 @@ export default async function DashboardPage() {
     (m) => m.trajectory === 'ERODING' || m.riskBand === 'CRITICAL' || m.riskBand === 'HIGH',
   );
 
+  const benchRows = (fcStaffing?.capacity ?? []).filter(
+    (c) => c.status === 'AVAILABLE' || c.status === 'BENCH',
+  );
+  const hasStaffingInsight = !!fcStaffing && (fcStaffing.moves.length > 0 || benchRows.length > 0);
+
   const MarginIcon =
     kpis.portfolioMargin !== null && kpis.portfolioMargin < 0 ? TrendingDown : TrendingUp;
 
@@ -173,9 +213,10 @@ export default async function DashboardPage() {
           One source of truth · refreshes on each load <AiBadge label="AI insights soon" />
         </span>
       }
+      actions={<PortfolioAskDrawer />}
     >
       {showDataBanner && dataQuality && (
-        <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-1 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-200">
+        <div className="mb-4 flex flex-wrap items-center gap-x-6 gap-y-1 rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-xs text-amber-800 dark:text-amber-200">
           <span className="flex items-center gap-1.5 font-medium">
             <AlertTriangle className="h-3.5 w-3.5" /> Read margins in context — excluded from project P&amp;L:
           </span>
@@ -258,10 +299,11 @@ export default async function DashboardPage() {
               <code className="rounded bg-secondary px-1 py-0.5 font-mono">@ces/forecast</code>
             </span>
           </header>
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
             <ForecastChip label="Margins eroding" value={fcSummary.marginsEroding} tone={fcSummary.marginsEroding ? 'amber' : 'green'} />
             <ForecastChip label="Margins critical" value={fcSummary.marginsCritical} tone={fcSummary.marginsCritical ? 'red' : 'green'} />
             <ForecastChip label="Overbooked next month" value={fcSummary.overbookedNextMonth} tone={fcSummary.overbookedNextMonth ? 'amber' : 'green'} />
+            <ForecastChip label="Free next month" value={fcSummary.benchAvailableNextMonth} tone="green" />
             <ForecastChip label="Expense spike" value={fcSummary.expenseSpike ? 'Yes' : 'No'} tone={fcSummary.expenseSpike ? 'red' : 'green'} />
             <ForecastChip label="Wellbeing at risk" value={fcSummary.wellbeingAtRisk} tone={fcSummary.wellbeingAtRisk ? 'amber' : 'green'} />
           </div>
@@ -297,7 +339,7 @@ export default async function DashboardPage() {
                         </TableCell>
                         <TableCell>
                           <span className="inline-flex items-center gap-1 text-xs">
-                            {m.trajectory === 'ERODING' && <TrendingDown className="h-3 w-3 text-red-400" />}
+                            {m.trajectory === 'ERODING' && <TrendingDown className="h-3 w-3 text-red-700 dark:text-red-400" />}
                             {m.trajectory}
                           </span>
                         </TableCell>
@@ -316,7 +358,7 @@ export default async function DashboardPage() {
             <Card className="mt-3">
               <CardHeader className="pb-2">
                 <CardTitle className="flex items-center gap-2 text-sm">
-                  <AlertTriangle className="h-4 w-4 text-amber-400" /> Workload watch
+                  <AlertTriangle className="h-4 w-4 text-amber-700 dark:text-amber-400" /> Workload watch
                 </CardTitle>
                 <CardDescription>Sustained high on-site hours — consider redistributing load.</CardDescription>
               </CardHeader>
@@ -334,7 +376,92 @@ export default async function DashboardPage() {
             </Card>
           )}
 
-          {atRiskMargins.length === 0 && fcWellbeing.length === 0 && (
+          {hasStaffingInsight && fcStaffing && (
+            <Card className="mt-3">
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-2 text-sm">
+                  <Users className="h-4 w-4 text-primary" /> Resource optimization
+                </CardTitle>
+                <CardDescription>
+                  Next month ({fcStaffing.window.start} → {fcStaffing.window.end}). Suggestions only — a PM confirms;
+                  nothing is auto-assigned.
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                {fcStaffing.moves.length > 0 && (
+                  <div>
+                    <div className="mb-1.5 text-[11px] font-medium text-muted-foreground">
+                      Suggested reassignments to relieve overbooking
+                    </div>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Move</TableHead>
+                          <TableHead>From → To</TableHead>
+                          <TableHead>Grade</TableHead>
+                          <TableHead className="text-right">Cost/day Δ</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {fcStaffing.moves.map((m) => (
+                          <TableRow key={m.allocationId} title={m.reasons.join('\n')}>
+                            <TableCell className="text-xs">
+                              <span className="font-mono">{m.percent}%</span> · {m.projectCode}
+                            </TableCell>
+                            <TableCell className="text-xs">
+                              <span className="inline-flex items-center gap-1">
+                                {m.fromUserName} <ArrowRight className="h-3 w-3 text-muted-foreground" /> {m.toUserName}
+                              </span>
+                            </TableCell>
+                            <TableCell>
+                              <Badge className="border text-[10px]">{m.gradeMatch}</Badge>
+                            </TableCell>
+                            <TableCell
+                              className={`text-right font-mono text-xs ${
+                                m.costDeltaPerDay != null && m.costDeltaPerDay < 0
+                                  ? 'text-green-700 dark:text-green-400'
+                                  : m.costDeltaPerDay != null && m.costDeltaPerDay > 0
+                                    ? 'text-amber-700 dark:text-amber-400'
+                                    : 'text-muted-foreground'
+                              }`}
+                            >
+                              {m.costDeltaPerDay == null
+                                ? '—'
+                                : m.costDeltaPerDay === 0
+                                  ? 'neutral'
+                                  : `${m.costDeltaPerDay < 0 ? '−' : '+'}${Math.abs(m.costDeltaPerDay)} ${m.currency}`}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                )}
+                {benchRows.length > 0 && (
+                  <div>
+                    <div className="mb-1.5 text-[11px] font-medium text-muted-foreground">Who&apos;s free</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {benchRows.map((c) => (
+                        <span
+                          key={c.userId}
+                          className="inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px]"
+                        >
+                          <span>{c.userName}</span>
+                          <span className="font-mono text-muted-foreground">{c.gradeCode}</span>
+                          <span className="text-muted-foreground">{c.sparePercent}% free</span>
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {fcStaffing.reasons.length > 0 && (
+                  <p className="text-[11px] text-muted-foreground">{fcStaffing.reasons.join(' · ')}</p>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {atRiskMargins.length === 0 && fcWellbeing.length === 0 && !hasStaffingInsight && (
             <p className="mt-2 text-xs text-muted-foreground">
               No forward-looking risks detected — margins on track, no overbookings or workload flags.
             </p>
@@ -373,10 +500,10 @@ export default async function DashboardPage() {
                   margin === null
                     ? 'text-muted-foreground'
                     : margin >= 30
-                      ? 'text-emerald-400'
+                      ? 'text-emerald-700 dark:text-emerald-400'
                       : margin >= 15
-                        ? 'text-amber-400'
-                        : 'text-red-400';
+                        ? 'text-amber-700 dark:text-amber-400'
+                        : 'text-red-700 dark:text-red-400';
                 return (
                   <TableRow key={p.id} className="transition-colors hover:bg-accent/40">
                     <TableCell className="font-mono text-xs">
@@ -464,7 +591,7 @@ export default async function DashboardPage() {
             </div>
             {anomalies.receiptFlags.length === 0 ? (
               <p className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
-                <ShieldCheck className="h-4 w-4 text-emerald-400" /> No flagged receipts.
+                <ShieldCheck className="h-4 w-4 text-emerald-700 dark:text-emerald-400" /> No flagged receipts.
               </p>
             ) : (
               <ul className="divide-y divide-border/60">
@@ -474,8 +601,8 @@ export default async function DashboardPage() {
                       <AlertTriangle
                         className={
                           f.severity === 'BLOCK'
-                            ? 'mt-0.5 h-3.5 w-3.5 text-red-400'
-                            : 'mt-0.5 h-3.5 w-3.5 text-amber-400'
+                            ? 'mt-0.5 h-3.5 w-3.5 text-red-700 dark:text-red-400'
+                            : 'mt-0.5 h-3.5 w-3.5 text-amber-700 dark:text-amber-400'
                         }
                       />
                       <div className="min-w-0 flex-1">
@@ -510,7 +637,7 @@ export default async function DashboardPage() {
             </div>
             {anomalies.overbookedEngineers.length === 0 ? (
               <p className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
-                <ShieldCheck className="h-4 w-4 text-emerald-400" /> No allocation conflicts.
+                <ShieldCheck className="h-4 w-4 text-emerald-700 dark:text-emerald-400" /> No allocation conflicts.
               </p>
             ) : (
               <ul className="divide-y divide-border/60">
@@ -544,7 +671,7 @@ export default async function DashboardPage() {
         <Card className="overflow-hidden p-0">
           {openAnomalies.length === 0 ? (
             <p className="flex items-center gap-2 p-4 text-sm text-muted-foreground">
-              <ShieldCheck className="h-4 w-4 text-emerald-400" /> No open anomalies. Run the
+              <ShieldCheck className="h-4 w-4 text-emerald-700 dark:text-emerald-400" /> No open anomalies. Run the
               detector from the rules page to scan again.
             </p>
           ) : (
@@ -552,20 +679,20 @@ export default async function DashboardPage() {
               {openAnomalies.slice(0, 8).map((a) => {
                 const sevClass =
                   a.severity === 'CRITICAL'
-                    ? 'border-red-500/30 bg-red-500/10 text-red-300'
+                    ? 'border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300'
                     : a.severity === 'WARN'
-                      ? 'border-amber-500/30 bg-amber-500/10 text-amber-300'
-                      : 'border-blue-500/30 bg-blue-500/10 text-blue-300';
+                      ? 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300'
+                      : 'border-blue-500/30 bg-blue-500/10 text-blue-700 dark:text-blue-300';
                 return (
                   <li key={a.id} className="p-3 text-xs">
                     <div className="flex items-start gap-2">
                       <AlertTriangle
                         className={
                           a.severity === 'CRITICAL'
-                            ? 'mt-0.5 h-3.5 w-3.5 text-red-400'
+                            ? 'mt-0.5 h-3.5 w-3.5 text-red-700 dark:text-red-400'
                             : a.severity === 'WARN'
-                              ? 'mt-0.5 h-3.5 w-3.5 text-amber-400'
-                              : 'mt-0.5 h-3.5 w-3.5 text-blue-400'
+                              ? 'mt-0.5 h-3.5 w-3.5 text-amber-700 dark:text-amber-400'
+                              : 'mt-0.5 h-3.5 w-3.5 text-blue-700 dark:text-blue-400'
                         }
                       />
                       <div className="min-w-0 flex-1">
@@ -620,10 +747,10 @@ export default async function DashboardPage() {
 
 function AllocationPill({ total, conflict }: { total: number; conflict: boolean }) {
   const tone = conflict
-    ? 'border-red-500/30 bg-red-500/10 text-red-300'
+    ? 'border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-300'
     : total >= 80
-      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
-      : 'border-amber-500/30 bg-amber-500/10 text-amber-300';
+      ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300'
+      : 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-300';
   return <Badge className={`border ${tone}`}>{total}%</Badge>;
 }
 

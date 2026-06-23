@@ -2,14 +2,17 @@
 
 import * as React from 'react';
 import { useRouter } from 'next/navigation';
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
+  AlertTriangle,
   ArrowLeft,
   ArrowRight,
   Check,
   ClipboardPaste,
+  FileSearch,
   FileText,
+  History,
   Loader2,
   Pencil,
   Sparkles,
@@ -100,6 +103,72 @@ End customer expects fortnightly status decks. No HW supply on our side (Airtel 
 ];
 
 type WizardStep = 'input' | 'review' | 'committing' | 'done';
+
+type Confidence = 'high' | 'medium' | 'low';
+type Cited<T> = { value: T | null; sourceQuote: string | null; confidence: Confidence };
+interface ExtractedTerms {
+  clientName: Cited<string>;
+  endCustomerName: Cited<string>;
+  billingModel: Cited<'FIXED_PRICE' | 'T_AND_M' | 'MILESTONE'>;
+  contractValue: Cited<string>;
+  currency: string;
+  plannedStart: Cited<string>;
+  plannedEnd: Cited<string>;
+  milestones: Array<{
+    name: string;
+    value: string | null;
+    plannedDate: string | null;
+    sourceQuote: string | null;
+    confidence: Confidence;
+  }>;
+  missing: string[];
+  warnings: string[];
+}
+
+const CONFIDENCE_TONE: Record<Confidence, string> = {
+  high: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
+  medium: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400',
+  low: 'border-red-500/30 bg-red-500/10 text-red-700 dark:text-red-400',
+};
+
+const BILLING_LABEL: Record<string, string> = {
+  FIXED_PRICE: 'Fixed price',
+  T_AND_M: 'Time & material',
+  MILESTONE: 'Milestone',
+};
+
+type EstimateSignal = 'OPTIMISTIC' | 'CONSERVATIVE' | 'INLINE';
+interface EstimateBenchmark {
+  category: string;
+  sampleSize: number;
+  avgMarginPercent: number | null;
+  marginRange: { min: number; max: number } | null;
+  costMixPercentOfRevenue: Record<string, number> | null;
+  marginVerdict: {
+    candidateMarginPercent: number;
+    benchmarkMarginPercent: number;
+    deltaPoints: number;
+    signal: EstimateSignal;
+    note: string;
+  } | null;
+  reasons: string[];
+}
+
+const SIGNAL_TONE: Record<EstimateSignal, string> = {
+  OPTIMISTIC: 'border-amber-500/30 bg-amber-500/10 text-amber-700 dark:text-amber-400',
+  CONSERVATIVE: 'border-sky-500/30 bg-sky-500/10 text-sky-400',
+  INLINE: 'border-emerald-500/30 bg-emerald-500/10 text-emerald-700 dark:text-emerald-400',
+};
+
+const COST_LABEL: Record<string, string> = {
+  effort: 'Effort',
+  travel: 'Travel',
+  lodging: 'Lodging',
+  da: 'DA',
+  localConveyance: 'Conveyance',
+  otherExpenses: 'Other exp.',
+  otherDirect: 'Other direct',
+};
 
 export default function OnboardWizardPage() {
   const router = useRouter();
@@ -300,6 +369,34 @@ function InputStep({
   streamText: string;
 }) {
   const tooShort = sourceText.trim().length < 40;
+  const [terms, setTerms] = React.useState<ExtractedTerms | null>(null);
+  const [extracting, setExtracting] = React.useState(false);
+
+  // Reset a stale extraction whenever the source changes — citations must match the text on screen.
+  React.useEffect(() => {
+    setTerms(null);
+  }, [sourceText]);
+
+  async function verifyTerms() {
+    setExtracting(true);
+    try {
+      const res = await api.post<{ terms: ExtractedTerms; source: 'claude' | 'mock' }>(
+        '/ai/project-onboard/extract-terms',
+        { documentText: sourceText },
+      );
+      setTerms(res.terms);
+      toast.success(
+        res.source === 'claude'
+          ? 'Commercial terms read from the document'
+          : 'Mock terms — set an API key for a real read with citations',
+      );
+    } catch (e: unknown) {
+      toast.error(e instanceof ApiError ? e.message : String(e));
+    } finally {
+      setExtracting(false);
+    }
+  }
+
   return (
     <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
       <Card tone="ai" className="overflow-hidden">
@@ -326,23 +423,44 @@ function InputStep({
                 <span className="ml-2 text-amber-500">need ≥ 40 chars</span>
               )}
             </p>
-            <Button
-              size="lg"
-              onClick={onGenerate}
-              disabled={tooShort || generating}
-              className="bg-gradient-to-r from-[hsl(var(--ai-from))] via-[hsl(var(--ai-via))] to-[hsl(var(--ai-to))] text-white shadow-lg hover:opacity-90"
-            >
-              {generating ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" /> Drafting plan…
-                </>
-              ) : (
-                <>
-                  <Sparkles className="h-4 w-4" /> Generate with Claude
-                </>
-              )}
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button
+                size="lg"
+                variant="outline"
+                onClick={verifyTerms}
+                disabled={tooShort || extracting || generating}
+                title="Read the contract value, billing model, dates, and milestones out of the document — each traced to a quote — before drafting the plan."
+              >
+                {extracting ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" /> Reading terms…
+                  </>
+                ) : (
+                  <>
+                    <FileSearch className="h-4 w-4" /> Verify commercial terms
+                  </>
+                )}
+              </Button>
+              <Button
+                size="lg"
+                onClick={onGenerate}
+                disabled={tooShort || generating}
+                className="bg-gradient-to-r from-[hsl(var(--ai-from))] via-[hsl(var(--ai-via))] to-[hsl(var(--ai-to))] text-white shadow-lg hover:opacity-90"
+              >
+                {generating ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" /> Drafting plan…
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-4 w-4" /> Generate with Claude
+                  </>
+                )}
+              </Button>
+            </div>
           </div>
+
+          {terms && <TermsPanel terms={terms} />}
 
           {generating && (
             <div className="rounded-lg border border-[hsl(var(--ai-via)/0.35)] bg-muted/20 p-3">
@@ -439,6 +557,197 @@ function FeatureRow({
 }
 
 // =====================================================================
+// Commercial-terms verification (SOW/PO intake) — the P&L baseline, traced
+// to the document. Evidence-by-default: every number shows the phrase it
+// came from, and anything not stated is flagged for the Owner to fill.
+// =====================================================================
+
+function TermsPanel({ terms }: { terms: ExtractedTerms }) {
+  const money = (v: string | null) => (v == null ? '—' : `${formatMoney(v)} ${terms.currency}`);
+  return (
+    <div className="space-y-3 rounded-lg border border-[hsl(var(--ai-via)/0.35)] bg-muted/20 p-4">
+      <p className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+        <FileSearch className="h-3 w-3 text-[hsl(var(--ai-via))]" /> Commercial terms · the P&amp;L baseline
+        <span className="font-normal normal-case opacity-70">— verify against the document before generating</span>
+      </p>
+
+      <div className="grid gap-2 sm:grid-cols-2">
+        <CitedRow label="Client" cited={terms.clientName} />
+        <CitedRow label="End customer" cited={terms.endCustomerName} />
+        <CitedRow
+          label="Billing model"
+          cited={terms.billingModel}
+          render={(v) => BILLING_LABEL[v] ?? v}
+        />
+        <CitedRow label="Contract value" cited={terms.contractValue} render={money} />
+        <CitedRow label="Planned start" cited={terms.plannedStart} />
+        <CitedRow label="Planned end" cited={terms.plannedEnd} />
+      </div>
+
+      {terms.milestones.length > 0 && (
+        <div>
+          <p className="mb-1 text-[11px] font-medium text-muted-foreground">Milestones</p>
+          <ul className="space-y-1">
+            {terms.milestones.map((m, i) => (
+              <li
+                key={`${m.name}-${i}`}
+                className="flex items-center justify-between gap-2 text-xs"
+                title={m.sourceQuote ?? undefined}
+              >
+                <span className="truncate">{m.name}</span>
+                <span className="flex items-center gap-2 shrink-0 text-muted-foreground">
+                  <span className="font-mono">{m.value == null ? '—' : money(m.value)}</span>
+                  <span>{m.plannedDate ?? '—'}</span>
+                  <Badge className={`border text-[10px] ${CONFIDENCE_TONE[m.confidence]}`}>{m.confidence}</Badge>
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {terms.missing.length > 0 && (
+        <div className="rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] text-amber-800 dark:text-amber-200">
+          <span className="font-medium">Not in the document — you must supply:</span> {terms.missing.join(', ')}
+        </div>
+      )}
+      {terms.warnings.map((w, i) => (
+        <p key={i} className="flex items-start gap-1.5 text-[11px] text-amber-700 dark:text-amber-300/90">
+          <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" /> {w}
+        </p>
+      ))}
+    </div>
+  );
+}
+
+function CitedRow<T extends string>({
+  label,
+  cited,
+  render,
+}: {
+  label: string;
+  cited: Cited<T>;
+  render?: (v: T) => string;
+}) {
+  const display = cited.value == null ? '—' : render ? render(cited.value) : cited.value;
+  return (
+    <div className="rounded-md border border-border/60 bg-background/40 p-2" title={cited.sourceQuote ?? undefined}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[11px] text-muted-foreground">{label}</span>
+        <Badge className={`border text-[10px] ${CONFIDENCE_TONE[cited.confidence]}`}>{cited.confidence}</Badge>
+      </div>
+      <div className="mt-0.5 text-sm font-medium text-foreground">{display}</div>
+      {cited.sourceQuote && (
+        <p className="mt-1 truncate text-[10px] italic text-muted-foreground/70">“{cited.sourceQuote}”</p>
+      )}
+    </div>
+  );
+}
+
+// =====================================================================
+// Estimation memory — anchor the new estimate in what similar closed
+// projects actually achieved (margin + cost mix). Advisory only.
+// =====================================================================
+
+function EstimationMemoryPanel({
+  category,
+  marginPercent,
+}: {
+  category: string;
+  marginPercent: number;
+}) {
+  const { data, isLoading } = useQuery({
+    queryKey: ['estimate-benchmark', category, marginPercent],
+    queryFn: () =>
+      api.get<EstimateBenchmark>('/ai/onboard/estimate-benchmark', {
+        query: { category, marginPercent: String(marginPercent) },
+      }),
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center gap-2 rounded-lg border border-border/60 bg-muted/20 p-4 text-xs text-muted-foreground">
+        <Loader2 className="h-3.5 w-3.5 animate-spin" /> Checking estimation memory…
+      </div>
+    );
+  }
+  if (!data) return null;
+
+  if (data.sampleSize === 0) {
+    return (
+      <div className="flex items-start gap-2 rounded-lg border border-border/60 bg-muted/20 p-4 text-xs text-muted-foreground">
+        <History className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+        No closed {category} projects in memory yet — this estimate is from first principles.
+      </div>
+    );
+  }
+
+  const mix = data.costMixPercentOfRevenue
+    ? Object.entries(data.costMixPercentOfRevenue)
+        .filter(([, v]) => v > 0)
+        .sort((a, b) => b[1] - a[1])
+    : [];
+  const maxMix = mix.length ? mix[0]![1] : 1;
+  const v = data.marginVerdict;
+
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="flex items-center gap-2 text-sm">
+          <History className="h-4 w-4 text-[hsl(var(--ai-via))]" /> Estimation memory
+          <Badge variant="outline" className="text-[10px]">
+            {data.sampleSize} closed {category} project{data.sampleSize === 1 ? '' : 's'}
+          </Badge>
+        </CardTitle>
+        <CardDescription>
+          What similar finished projects actually achieved — anchor the estimate in history, not hope.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        {v && (
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <Badge className={`border text-[10px] ${SIGNAL_TONE[v.signal]}`}>{v.signal}</Badge>
+            <span className="text-muted-foreground">
+              Plan <span className="font-medium text-foreground">{v.candidateMarginPercent.toFixed(1)}%</span> vs
+              realized <span className="font-medium text-foreground">{v.benchmarkMarginPercent.toFixed(1)}%</span>
+              {data.marginRange && (
+                <span className="text-muted-foreground/70">
+                  {' '}
+                  (range {data.marginRange.min}–{data.marginRange.max}%)
+                </span>
+              )}
+            </span>
+          </div>
+        )}
+        {v && <p className="text-xs text-muted-foreground">{v.note}</p>}
+
+        {mix.length > 0 && (
+          <div>
+            <p className="mb-1.5 text-[11px] font-medium text-muted-foreground">
+              Where revenue actually went (avg % of revenue)
+            </p>
+            <div className="space-y-1">
+              {mix.map(([k, val]) => (
+                <div key={k} className="flex items-center gap-2 text-[11px]">
+                  <span className="w-24 shrink-0 text-muted-foreground">{COST_LABEL[k] ?? k}</span>
+                  <div className="h-2 flex-1 overflow-hidden rounded-full bg-secondary">
+                    <div
+                      className="h-full rounded-full bg-[hsl(var(--ai-via))]/60"
+                      style={{ width: `${Math.min(100, (val / maxMix) * 100)}%` }}
+                    />
+                  </div>
+                  <span className="w-12 shrink-0 text-right font-mono">{val}%</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// =====================================================================
 // Step 2 — Review
 // =====================================================================
 
@@ -516,6 +825,11 @@ function ReviewStep({
           accent="primary"
         />
       </div>
+
+      <EstimationMemoryPanel
+        category={plan.category}
+        marginPercent={plan.marginForecast.marginPercent}
+      />
 
       {/* Core fields + scope */}
       <Card>
@@ -1004,9 +1318,9 @@ function KpiCard({
 }) {
   const cls =
     accent === 'positive'
-      ? 'text-emerald-400'
+      ? 'text-emerald-700 dark:text-emerald-400'
       : accent === 'amber'
-        ? 'text-amber-400'
+        ? 'text-amber-700 dark:text-amber-400'
         : accent === 'primary'
           ? 'text-[hsl(var(--ai-via))]'
           : 'text-foreground';

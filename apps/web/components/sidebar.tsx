@@ -174,6 +174,12 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
         icon: AlertTriangle,
         roles: ['ADMIN', 'FINANCE', 'PROJECT_OWNER'],
       },
+      {
+        href: '/admin/auto-approval',
+        label: 'Auto-approval',
+        icon: Settings2,
+        roles: ['ADMIN'],
+      },
     ],
   },
 ];
@@ -195,7 +201,7 @@ export function Sidebar({ user }: { user: AuthedUser }) {
     .toUpperCase();
 
   return (
-    <aside className="relative hidden h-screen w-64 shrink-0 flex-col border-r border-border/60 bg-card/40 backdrop-blur-xl md:flex">
+    <aside className="relative hidden h-screen w-64 shrink-0 flex-col border-r border-border/60 bg-card/70 backdrop-blur-xl md:flex">
       <div className="flex h-14 items-center gap-2.5 border-b border-border/60 px-4">
         <div
           className="brand-surface relative grid h-8 w-8 place-items-center rounded-lg text-[11px] font-bold text-white shadow-[inset_0_1px_0_rgb(255_255_255/0.25),0_4px_16px_-3px_hsl(var(--glow)/0.8)]"

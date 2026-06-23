@@ -41,7 +41,7 @@ export default async function BudgetWorklistPage() {
       <div className="mb-4 grid gap-3 sm:grid-cols-2">
         <Card>
           <CardContent className="flex items-center gap-3 py-4">
-            <div className="grid h-9 w-9 place-items-center rounded-lg bg-amber-500/15 text-amber-300">
+            <div className="grid h-9 w-9 place-items-center rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-300">
               <AlertTriangle className="h-4 w-4" />
             </div>
             <div>
@@ -52,7 +52,7 @@ export default async function BudgetWorklistPage() {
         </Card>
         <Card>
           <CardContent className="flex items-center gap-3 py-4">
-            <div className="grid h-9 w-9 place-items-center rounded-lg bg-amber-500/15 text-amber-300">
+            <div className="grid h-9 w-9 place-items-center rounded-lg bg-amber-500/15 text-amber-700 dark:text-amber-300">
               <AlertTriangle className="h-4 w-4" />
             </div>
             <div>
