@@ -42,4 +42,10 @@ export class UsersController {
   get(@Param('id', new ParseUUIDPipe()) id: string) {
     return this.users.get(id);
   }
+
+  @Get(':id/profile')
+  @ApiOperation({ summary: 'Rich employee profile + HR rollups (allocations, leave, hours)' })
+  profile(@Param('id', new ParseUUIDPipe()) id: string) {
+    return this.users.profile(id);
+  }
 }

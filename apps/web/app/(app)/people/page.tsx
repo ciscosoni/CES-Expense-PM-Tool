@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { AdminShell } from '@/components/admin-shell';
 import { Badge } from '@/components/ui/badge';
 import { Card } from '@/components/ui/card';
@@ -49,7 +50,11 @@ export default async function PeoplePage() {
             {people.length === 0 && <TableEmpty colSpan={6}>No employees yet.</TableEmpty>}
             {people.map((p) => (
               <TableRow key={p.id}>
-                <TableCell className="text-sm font-medium">{p.displayName}</TableCell>
+                <TableCell className="text-sm font-medium">
+                  <Link href={`/people/${p.id}`} className="hover:text-primary hover:underline">
+                    {p.displayName}
+                  </Link>
+                </TableCell>
                 <TableCell className="text-xs text-muted-foreground">{p.email}</TableCell>
                 <TableCell className="text-xs">{p.jobTitle || '—'}</TableCell>
                 <TableCell className="text-xs">{p.department || '—'}</TableCell>
