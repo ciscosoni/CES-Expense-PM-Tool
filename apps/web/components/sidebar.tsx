@@ -234,6 +234,8 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
       { href: '/admin/da-policies', label: 'DA policies', icon: Settings2, roles: ['ADMIN'] },
       { href: '/admin/clients', label: 'Clients master (SI/OEM)', icon: Building2, roles: ['ADMIN'] },
       { href: '/admin/end-customers', label: 'End customers', icon: Building2, roles: ['ADMIN'] },
+      { href: '/admin/departments', label: 'Departments', icon: Users, roles: ['ADMIN'] },
+      { href: '/admin/designations', label: 'Designations', icon: Users, roles: ['ADMIN'] },
       { href: '/admin/users', label: 'Users & roles', icon: Users, roles: ['ADMIN'] },
       {
         href: '/admin/anomaly-rules',

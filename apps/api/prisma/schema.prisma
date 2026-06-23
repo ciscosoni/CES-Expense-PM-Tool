@@ -1112,3 +1112,26 @@ model Lead {
   @@index([stage])
   @@index([ownerId])
 }
+
+// ---------------------------------------------------------------------------
+// HR org structure (Workway parity). Departments + Designations as editable
+// master data. Headcount is derived by matching User.department / User.jobTitle
+// (kept as strings) so existing data isn't disrupted.
+// ---------------------------------------------------------------------------
+model Department {
+  id        String    @id @default(uuid()) @db.Uuid
+  name      String    @unique
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+}
+
+model Designation {
+  id        String    @id @default(uuid()) @db.Uuid
+  name      String    @unique
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+}
