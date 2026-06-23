@@ -6,7 +6,9 @@ import {
   AlertTriangle,
   Building2,
   CalendarCheck,
+  CalendarDays,
   ClipboardList,
+  Clock,
   CreditCard,
   FileBarChart,
   FolderKanban,
@@ -17,7 +19,9 @@ import {
   Receipt,
   Settings2,
   ShieldCheck,
+  ShoppingCart,
   Sparkles,
+  Target,
   Users,
   Wallet,
   type LucideIcon,
@@ -37,16 +41,53 @@ interface NavItem {
   stub?: boolean;
 }
 
+const ALL_ROLES: UserRole[] = [
+  'ADMIN',
+  'FINANCE',
+  'PROJECT_OWNER',
+  'PROJECT_MANAGER',
+  'APPROVER',
+  'ENGINEER',
+];
+
 const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
   {
-    label: 'Work',
+    label: 'Overview',
     items: [
       {
         href: '/dashboard',
-        label: 'Live Ops',
+        label: 'Dashboard',
         icon: LayoutDashboard,
         roles: ['ADMIN', 'PROJECT_MANAGER', 'PROJECT_OWNER', 'FINANCE'],
       },
+    ],
+  },
+  {
+    label: 'CRM',
+    items: [
+      {
+        href: '/leads',
+        label: 'Leads',
+        icon: Target,
+        roles: ['ADMIN', 'PROJECT_OWNER', 'PROJECT_MANAGER'],
+      },
+      {
+        href: '/clients',
+        label: 'Clients',
+        icon: Building2,
+        roles: ['ADMIN', 'PROJECT_OWNER', 'PROJECT_MANAGER', 'FINANCE'],
+      },
+      {
+        href: '/orders',
+        label: 'Orders',
+        icon: ShoppingCart,
+        roles: ['ADMIN', 'FINANCE', 'PROJECT_OWNER'],
+      },
+    ],
+  },
+  {
+    label: 'Delivery',
+    items: [
       {
         href: '/projects',
         label: 'Projects',
@@ -61,27 +102,26 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
       },
       {
         href: '/tasks',
-        label: 'My tasks',
+        label: 'Tasks',
         icon: ClipboardList,
         roles: ['ENGINEER', 'PROJECT_MANAGER', 'ADMIN'],
       },
+      {
+        href: '/timesheets',
+        label: 'Timesheets',
+        icon: Clock,
+        roles: ['ENGINEER', 'PROJECT_MANAGER', 'ADMIN'],
+      },
+    ],
+  },
+  {
+    label: 'Field Ops',
+    items: [
       {
         href: '/attendance',
         label: 'Attendance',
         icon: CalendarCheck,
         roles: ['ENGINEER', 'PROJECT_MANAGER', 'PROJECT_OWNER', 'ADMIN'],
-      },
-      {
-        href: '/leave',
-        label: 'Leave',
-        icon: CalendarCheck,
-        roles: ['ENGINEER', 'PROJECT_MANAGER', 'PROJECT_OWNER', 'FINANCE', 'ADMIN'],
-      },
-      {
-        href: '/attendance/inbox',
-        label: 'Regularization queue',
-        icon: ShieldCheck,
-        roles: ['PROJECT_MANAGER', 'PROJECT_OWNER', 'ADMIN'],
       },
       {
         href: '/travel',
@@ -90,28 +130,39 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
         roles: ['ENGINEER', 'PROJECT_MANAGER', 'PROJECT_OWNER', 'ADMIN', 'FINANCE'],
       },
       {
+        href: '/expenses',
+        label: 'Expenses',
+        icon: Receipt,
+        roles: ['ENGINEER', 'PROJECT_MANAGER', 'PROJECT_OWNER', 'ADMIN', 'FINANCE'],
+      },
+    ],
+  },
+  {
+    label: 'Approvals',
+    items: [
+      {
+        href: '/approvals',
+        label: 'Approvals hub',
+        icon: ShieldCheck,
+        roles: ['APPROVER', 'PROJECT_OWNER', 'PROJECT_MANAGER', 'FINANCE', 'ADMIN'],
+      },
+      {
+        href: '/expenses/inbox',
+        label: 'Expense queue',
+        icon: ShieldCheck,
+        roles: ['PROJECT_OWNER', 'PROJECT_MANAGER', 'FINANCE', 'ADMIN'],
+      },
+      {
         href: '/travel/inbox',
         label: 'Travel approvals',
         icon: ShieldCheck,
         roles: ['PROJECT_MANAGER', 'PROJECT_OWNER', 'ADMIN'],
       },
       {
-        href: '/expenses',
-        label: 'Expenses',
-        icon: Receipt,
-        roles: ['ENGINEER', 'PROJECT_MANAGER', 'PROJECT_OWNER', 'ADMIN', 'FINANCE'],
-      },
-      {
-        href: '/expenses/inbox',
-        label: 'Expense approvals',
+        href: '/attendance/inbox',
+        label: 'Regularization queue',
         icon: ShieldCheck,
-        roles: ['PROJECT_OWNER', 'PROJECT_MANAGER', 'FINANCE', 'ADMIN'],
-      },
-      {
-        href: '/approvals',
-        label: 'Approvals hub',
-        icon: ShieldCheck,
-        roles: ['APPROVER', 'PROJECT_OWNER', 'PROJECT_MANAGER', 'FINANCE', 'ADMIN'],
+        roles: ['PROJECT_MANAGER', 'PROJECT_OWNER', 'ADMIN'],
       },
     ],
   },
@@ -141,7 +192,29 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
         label: 'Reports',
         icon: FileBarChart,
         roles: ['FINANCE', 'ADMIN'],
-        stub: true,
+      },
+    ],
+  },
+  {
+    label: 'People',
+    items: [
+      {
+        href: '/people',
+        label: 'Employees',
+        icon: Users,
+        roles: ['ADMIN', 'FINANCE', 'PROJECT_OWNER', 'PROJECT_MANAGER'],
+      },
+      {
+        href: '/leave',
+        label: 'Leave',
+        icon: CalendarCheck,
+        roles: ['ENGINEER', 'PROJECT_MANAGER', 'PROJECT_OWNER', 'FINANCE', 'ADMIN'],
+      },
+      {
+        href: '/holidays',
+        label: 'Holidays',
+        icon: CalendarDays,
+        roles: ALL_ROLES,
       },
     ],
   },
@@ -159,9 +232,9 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
         roles: ['ADMIN'],
       },
       { href: '/admin/da-policies', label: 'DA policies', icon: Settings2, roles: ['ADMIN'] },
-      { href: '/admin/clients', label: 'Clients (SI/OEM)', icon: Building2, roles: ['ADMIN'] },
+      { href: '/admin/clients', label: 'Clients master (SI/OEM)', icon: Building2, roles: ['ADMIN'] },
       { href: '/admin/end-customers', label: 'End customers', icon: Building2, roles: ['ADMIN'] },
-      { href: '/admin/users', label: 'Users', icon: Users, roles: ['ADMIN'] },
+      { href: '/admin/users', label: 'Users & roles', icon: Users, roles: ['ADMIN'] },
       {
         href: '/admin/anomaly-rules',
         label: 'Anomaly rules',
