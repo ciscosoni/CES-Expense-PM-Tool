@@ -46,6 +46,7 @@ import { TimerModule } from './timer/timer.module.js';
 import { InvoicesModule } from './invoices/invoices.module.js';
 import { LeadsModule } from './leads/leads.module.js';
 import { OrgModule } from './org/org.module.js';
+import { PayrollModule } from './payroll/payroll.module.js';
 
 const isProd = process.env.NODE_ENV === 'production';
 
@@ -133,6 +134,7 @@ const isProd = process.env.NODE_ENV === 'production';
     InvoicesModule,
     LeadsModule,
     OrgModule,
+    PayrollModule,
   ],
   controllers: [HealthController],
   providers: [

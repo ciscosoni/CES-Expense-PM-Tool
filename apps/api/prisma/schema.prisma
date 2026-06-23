@@ -56,6 +56,7 @@ model User {
   approvedLeaves       Leave[]      @relation("LeaveApprover")
   activeTimer          ActiveTimer? @relation("UserTimer")
   ownedLeads           Lead[]       @relation("LeadOwner")
+  salaryStructure      SalaryStructure? @relation("UserSalary")
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
   deletedAt     DateTime?
@@ -1134,4 +1135,21 @@ model Designation {
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
+}
+
+// ---------------------------------------------------------------------------
+// Payroll — per-employee salary structure (Workway employee_salary parity).
+// Components are stored as JSON [{label, type: EARNING|DEDUCTION, amount}];
+// gross/net are COMPUTED on read, never stored (computed-never-entered-twice).
+// The monthly payroll register is derived from these structures.
+// ---------------------------------------------------------------------------
+model SalaryStructure {
+  id            String   @id @default(uuid()) @db.Uuid
+  userId        String   @unique @db.Uuid
+  user          User     @relation("UserSalary", fields: [userId], references: [id])
+  currency      String   @default("INR") @db.Char(3)
+  components    Json     @default("[]")
+  effectiveFrom DateTime @default(now()) @db.Date
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 }

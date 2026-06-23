@@ -182,6 +182,12 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
         roles: ['FINANCE', 'ADMIN'],
       },
       {
+        href: '/finance/payroll',
+        label: 'Payroll',
+        icon: Wallet,
+        roles: ['FINANCE', 'ADMIN'],
+      },
+      {
         href: '/finance/payslips',
         label: 'Payslips',
         icon: CreditCard,
