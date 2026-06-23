@@ -174,26 +174,56 @@
     pointer-events: none;
   }
 
+  /* Light theme atmosphere — soft aurora + faint masked grid so frosted
+     glass has something to read against on a white page. Static (kept under
+     reduced-motion). Mirrors the dark mesh, retuned lighter. */
+  html:not(.dark) body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -2;
+    pointer-events: none;
+    background:
+      radial-gradient(54rem 54rem at 12% -8%, hsl(var(--primary) / 0.07), transparent 60%),
+      radial-gradient(48rem 48rem at 92% 4%, hsl(192 92% 58% / 0.06), transparent 58%),
+      radial-gradient(64rem 48rem at 60% 110%, hsl(248 70% 60% / 0.04), transparent 60%);
+  }
+
+  html:not(.dark) body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: -2;
+    pointer-events: none;
+    background-image:
+      linear-gradient(hsl(var(--border) / 0.6) 1px, transparent 1px),
+      linear-gradient(90deg, hsl(var(--border) / 0.6) 1px, transparent 1px);
+    background-size: 48px 48px;
+    -webkit-mask-image: radial-gradient(60rem 50rem at 50% -10%, #000 25%, transparent 72%);
+    mask-image: radial-gradient(60rem 50rem at 50% -10%, #000 25%, transparent 72%);
+    opacity: 0.6;
+  }
+
   :focus-visible {
     outline: 2px solid hsl(var(--ring));
     outline-offset: 2px;
     border-radius: 4px;
   }
 
-  .dark ::-webkit-scrollbar {
+  ::-webkit-scrollbar {
     width: 10px;
     height: 10px;
   }
-  .dark ::-webkit-scrollbar-track {
+  ::-webkit-scrollbar-track {
     background: transparent;
   }
-  .dark ::-webkit-scrollbar-thumb {
+  ::-webkit-scrollbar-thumb {
     background: hsl(var(--muted));
     border-radius: 8px;
     border: 2px solid transparent;
     background-clip: padding-box;
   }
-  .dark ::-webkit-scrollbar-thumb:hover {
+  ::-webkit-scrollbar-thumb:hover {
     background: hsl(var(--accent));
     background-clip: padding-box;
   }
