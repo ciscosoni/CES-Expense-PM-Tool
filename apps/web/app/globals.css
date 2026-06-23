@@ -6,7 +6,7 @@
   /* Light mode — kept tight so the toggle remains usable, but dark is the hero. */
   :root {
     --background: 0 0% 100%;
-    --foreground: 240 10% 9%;
+    --foreground: 222 47% 11%;
     --card: 0 0% 100%;
     --card-foreground: 240 10% 9%;
     --elevated: 240 5% 98%;
@@ -17,7 +17,7 @@
     --secondary: 240 5% 96%;
     --secondary-foreground: 240 10% 9%;
     --muted: 240 5% 96%;
-    --muted-foreground: 240 4% 46%;
+    --muted-foreground: 240 5% 38%;
     --accent: 240 5% 96%;
     --accent-foreground: 240 10% 9%;
     --destructive: 0 72% 51%;
@@ -29,10 +29,31 @@
     --ring: 219 90% 54%;
     --radius: 0.7rem;
 
-    --ai-from: 250 84% 67%;
-    --ai-via: 222 90% 62%;
+    --ai-from: 222 90% 62%;
+    --ai-via: 210 90% 60%;
     --ai-to: 192 92% 58%;
     --glow: 219 90% 54%;
+
+    /* Authority ink for headings/sidebar. */
+    --ink-strong: 222 47% 18%;
+
+    /* Glass + gloss recipe tokens — consumed by .glass / .lift / buttons.
+       Light: soft, near-white frosted surface on the aurora ground. */
+    --glass-bg: linear-gradient(180deg, hsl(0 0% 100% / 0.80), hsl(0 0% 100% / 0.62));
+    --glass-border: 240 6% 88%;
+    --gloss-highlight: inset 0 1px 0 0 hsl(0 0% 100% / 0.75);
+    --shadow-card:
+      inset 0 1px 0 0 hsl(0 0% 100% / 0.70),
+      0 1px 2px 0 hsl(222 47% 11% / 0.05),
+      0 16px 40px -24px hsl(222 47% 11% / 0.16);
+    --shadow-card-hover:
+      inset 0 1px 0 0 hsl(0 0% 100% / 0.85),
+      0 1px 2px 0 hsl(222 47% 11% / 0.06),
+      0 18px 40px -20px hsl(var(--glow) / 0.26),
+      0 0 0 1px hsl(var(--primary) / 0.12);
+    --shadow-btn:
+      0 1px 2px 0 hsl(222 47% 11% / 0.10),
+      inset 0 1px 0 0 hsl(0 0% 100% / 0.25);
   }
 
   /* Dark mode — "operations console": near-black indigo base, electric
@@ -67,6 +88,23 @@
     --ai-via: 222 95% 66%;
     --ai-to: 190 95% 62%;
     --glow: 217 92% 58%;
+
+    --ink-strong: 220 20% 97%;
+    --glass-bg: linear-gradient(180deg, hsl(var(--card) / 0.72), hsl(var(--card) / 0.55));
+    --glass-border: 240 10% 18%;
+    --gloss-highlight: inset 0 1px 0 0 hsl(0 0% 100% / 0.05);
+    --shadow-card:
+      inset 0 1px 0 0 hsl(0 0% 100% / 0.05),
+      0 1px 2px 0 rgb(0 0 0 / 0.3),
+      0 16px 40px -24px rgb(0 0 0 / 0.7);
+    --shadow-card-hover:
+      inset 0 1px 0 0 hsl(0 0% 100% / 0.07),
+      0 1px 2px 0 rgb(0 0 0 / 0.3),
+      0 18px 40px -20px hsl(var(--glow) / 0.55),
+      0 0 0 1px hsl(var(--primary) / 0.18);
+    --shadow-btn:
+      0 1px 2px rgb(0 0 0 / 0.3),
+      inset 0 1px 0 hsl(0 0% 100% / 0.15);
   }
 
   * {
@@ -165,14 +203,17 @@
   /* Glass surface — frosted, layered border highlight + depth shadow. The
      workhorse card treatment that replaces the old flat fill. */
   .glass {
-    background: linear-gradient(180deg, hsl(var(--card) / 0.72), hsl(var(--card) / 0.55));
+    background: var(--glass-bg);
     backdrop-filter: blur(12px) saturate(140%);
     -webkit-backdrop-filter: blur(12px) saturate(140%);
-    border: 1px solid hsl(var(--border) / 0.85);
-    box-shadow:
-      inset 0 1px 0 0 hsl(0 0% 100% / 0.05),
-      0 1px 2px 0 rgb(0 0 0 / 0.3),
-      0 16px 40px -24px rgb(0 0 0 / 0.7);
+    border: 1px solid hsl(var(--glass-border));
+    box-shadow: var(--shadow-card);
+  }
+  /* Solid fallback where backdrop-filter is unsupported. */
+  @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .glass {
+      background: hsl(var(--card));
+    }
   }
 
   /* Soft hover elevation with a colored glow — pairs with .group cards. */
@@ -185,12 +226,8 @@
   }
   .lift:hover {
     transform: translateY(-3px);
-    border-color: hsl(var(--primary) / 0.6);
-    box-shadow:
-      inset 0 1px 0 0 hsl(0 0% 100% / 0.07),
-      0 1px 2px 0 rgb(0 0 0 / 0.3),
-      0 18px 40px -20px hsl(var(--glow) / 0.55),
-      0 0 0 1px hsl(var(--primary) / 0.18);
+    border-color: hsl(var(--primary) / 0.5);
+    box-shadow: var(--shadow-card-hover);
   }
 }
 
