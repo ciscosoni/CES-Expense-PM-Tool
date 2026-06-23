@@ -1153,3 +1153,41 @@ model SalaryStructure {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }
+
+// ---------------------------------------------------------------------------
+// Orders (Workway parity) — unified sales + purchase orders. partyId holds a
+// Client (SALE) or Vendor (PURCHASE) id; names resolved in the service. Totals
+// are COMPUTED from line items (never stored twice).
+// ---------------------------------------------------------------------------
+enum OrderKind {
+  SALE
+  PURCHASE
+}
+
+enum OrderStatus {
+  DRAFT
+  SENT
+  CONFIRMED
+  COMPLETED
+  CANCELLED
+}
+
+model Order {
+  id          String      @id @default(uuid()) @db.Uuid
+  orderNumber String      @unique
+  kind        OrderKind
+  status      OrderStatus @default(DRAFT)
+  partyId     String?     @db.Uuid
+  projectId   String?     @db.Uuid
+  orderDate   DateTime    @default(now()) @db.Date
+  currency    String      @default("INR") @db.Char(3)
+  items       Json        @default("[]")
+  taxPercent  Decimal     @default(0) @db.Decimal(5, 2)
+  notes       String?
+  createdById String?     @db.Uuid
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  deletedAt   DateTime?
+
+  @@index([kind, status])
+}
