@@ -13,6 +13,7 @@ import {
   FileBarChart,
   FolderKanban,
   Globe2,
+  KanbanSquare,
   LayoutDashboard,
   LogOut,
   Plane,
@@ -105,6 +106,12 @@ const NAV_SECTIONS: { label: string; items: NavItem[] }[] = [
         label: 'Tasks',
         icon: ClipboardList,
         roles: ['ENGINEER', 'PROJECT_MANAGER', 'ADMIN'],
+      },
+      {
+        href: '/taskboard',
+        label: 'Taskboard',
+        icon: KanbanSquare,
+        roles: ['ENGINEER', 'PROJECT_MANAGER', 'PROJECT_OWNER', 'ADMIN'],
       },
       {
         href: '/timesheets',
