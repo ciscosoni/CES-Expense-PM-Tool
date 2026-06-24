@@ -56,6 +56,11 @@ COPY apps/mobile/package.json ./apps/mobile/
 COPY packages ./packages
 RUN --mount=type=cache,id=pnpm-store,target=/pnpm-store \
     pnpm install --frozen-lockfile --filter @ces/api... --prod=true
+# Generate the Prisma client INTO the prod node_modules that the runtime image
+# copies. The builder stage's generate doesn't carry over — runtime takes
+# node_modules from here, not from builder. Needs the schema present.
+COPY apps/api/prisma ./apps/api/prisma
+RUN pnpm --filter @ces/api exec prisma generate
 
 # =====================================================================
 # Stage 5 — runtime: minimal node image with the built API
@@ -68,10 +73,15 @@ WORKDIR /app
 ENV NODE_ENV=production
 ENV API_PORT=4000
 
-# 1. node_modules (workspace-aware, pruned to prod)
+# 1. node_modules (workspace-aware, pruned to prod): the root .pnpm store + the
+#    api's own per-workspace symlinks (reflect-metadata, @nestjs/*, prisma, @ces/*).
+#    pnpm keeps app deps under apps/api/node_modules, NOT the root, so both are needed.
 COPY --from=prod-deps --chown=api:nodejs /repo/node_modules ./node_modules
-COPY --from=prod-deps --chown=api:nodejs /repo/packages ./packages
-# 2. Built api
+COPY --from=prod-deps --chown=api:nodejs /repo/apps/api/node_modules ./apps/api/node_modules
+# 2. Built workspace packages — copied from BUILDER so their compiled dist/ is
+#    present (@ces/* resolve to ./dist/index.js); prod-deps never builds them.
+COPY --from=builder --chown=api:nodejs /repo/packages ./packages
+# 3. Built api
 COPY --from=builder --chown=api:nodejs /repo/apps/api/dist ./apps/api/dist
 COPY --from=builder --chown=api:nodejs /repo/apps/api/package.json ./apps/api/
 COPY --from=builder --chown=api:nodejs /repo/apps/api/prisma ./apps/api/prisma
