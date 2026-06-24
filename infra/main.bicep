@@ -430,9 +430,13 @@ resource webApp 'Microsoft.App/containerApps@2024-03-01' = {
           env: [
             { name: 'NODE_ENV', value: 'production' }
             { name: 'PORT', value: '3000' }
-            // The web app talks to the API over the public Container Apps
-            // FQDN. Batch 5 swaps these for the api.ops.ces-pl.com custom
-            // domain once the cert binding is in place.
+            // The web app's server side talks to the API over the public
+            // Container Apps FQDN. API_BASE_URL is read at RUNTIME (NEXT_PUBLIC_*
+            // gets frozen into the bundle at build time, so it can't be changed
+            // here); this is the one the server actually uses. Batch 5 swaps
+            // these for the api.ops.ces-pl.com custom domain once the cert
+            // binding is in place — just an env update, no image rebuild.
+            { name: 'API_BASE_URL', value: 'https://${apiApp.properties.configuration.ingress.fqdn}' }
             { name: 'NEXT_PUBLIC_API_BASE_URL', value: 'https://${apiApp.properties.configuration.ingress.fqdn}' }
           ]
           probes: [
