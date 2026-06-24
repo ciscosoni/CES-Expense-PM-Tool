@@ -48,9 +48,22 @@ export class AgentsController {
   @Put('auto-approval/policy')
   @Roles('ADMIN')
   @UsePipes(ZodValidationPipe)
-  @ApiOperation({ summary: 'Update the auto-approval policy (admin). Suggest-only — never auto-acts.' })
+  @ApiOperation({
+    summary:
+      'Update the auto-approval policy (admin). `autoApprove` is the kill switch for confident owner-step auto-approval (default OFF).',
+  })
   updatePolicy(@Body() body: UpdateAutoApprovalPolicyDto, @CurrentUser() user: AuthedUser) {
     return this.autoApproval.updatePolicy(body, user);
+  }
+
+  @Post('auto-approval/run')
+  @Roles('ADMIN')
+  @ApiOperation({
+    summary:
+      'Run confident auto-approval now: advance clean, in-policy expenses through the OWNER step (Finance still reviews). No-op unless the policy kill switch is on. Audited as a system action.',
+  })
+  runAutoApproval() {
+    return this.autoApproval.runAutoApproval();
   }
 
   @Get('auto-approval/suggestions')

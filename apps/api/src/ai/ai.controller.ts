@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Res, UsePipes } from '@nestjs/common';
+import { Body, Controller, Get, Post, Query, Res, UsePipes } from '@nestjs/common';
 import type { Response } from 'express';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, Roles, type AuthedUser } from '../auth/index.js';
@@ -6,9 +6,12 @@ import { ZodValidationPipe } from '../common/zod-validation.pipe.js';
 import { AiService } from './ai.service.js';
 import {
   AskDto,
+  AskPortfolioDto,
+  ClassifyBillableDto,
   CommandDto,
   CommitOnboardingDto,
   ExtractDto,
+  ExtractTermsDto,
   GenerateOnboardingDto,
 } from './ai.dto.js';
 
@@ -51,6 +54,30 @@ export class AiController {
     }
   }
 
+  @Get('onboard/estimate-benchmark')
+  @Roles('ADMIN', 'PROJECT_OWNER', 'PROJECT_MANAGER')
+  @ApiOperation({
+    summary:
+      'Estimation memory: benchmark a new project against closed projects in the same category — realized margin + cost mix, and (if a candidate margin is given) whether the plan reads optimistic/conservative vs history.',
+  })
+  estimateBenchmark(@Query('category') category: string, @Query('marginPercent') marginPercent?: string) {
+    const m = marginPercent != null && marginPercent !== '' ? Number(marginPercent) : null;
+    return this.ai.estimateBenchmark({
+      category: category ?? '',
+      marginPercent: m != null && Number.isFinite(m) ? m : null,
+    });
+  }
+
+  @Post('project-onboard/extract-terms')
+  @Roles('ADMIN', 'PROJECT_OWNER', 'PROJECT_MANAGER')
+  @ApiOperation({
+    summary:
+      'Read the commercial terms (client, billing model, contract value, dates, milestones) out of a pasted SOW/PO — each traced to a verbatim quote with a confidence, plus missing/ambiguous flags. The Owner verifies the P&L-baseline numbers before generating the plan.',
+  })
+  extractTerms(@Body() body: ExtractTermsDto) {
+    return this.ai.extractProjectTerms(body);
+  }
+
   @Post('project-onboard/commit')
   @Roles('ADMIN', 'PROJECT_OWNER')
   @ApiOperation({
@@ -68,6 +95,26 @@ export class AiController {
   })
   ask(@Body() body: AskDto, @CurrentUser() user: AuthedUser) {
     return this.ai.ask(body, user);
+  }
+
+  @Post('ask-portfolio')
+  @Roles('ADMIN', 'FINANCE')
+  @ApiOperation({
+    summary:
+      'Portfolio-wide grounded Q&A for leadership — answers from a live snapshot (per-project P&L, forward-looking trajectories, KPIs, anomalies), citing project codes and numbers. Read-only.',
+  })
+  askPortfolio(@Body() body: AskPortfolioDto) {
+    return this.ai.askPortfolio(body);
+  }
+
+  @Post('classify-billable')
+  @Roles('ADMIN', 'FINANCE', 'PROJECT_OWNER', 'PROJECT_MANAGER')
+  @ApiOperation({
+    summary:
+      "Suggest-only second opinion on whether one time log's work is client-billable. Grounded in the task/project; never changes billable status.",
+  })
+  classifyBillable(@Body() body: ClassifyBillableDto, @CurrentUser() user: AuthedUser) {
+    return this.ai.classifyBillable(body, user);
   }
 
   @Post('extract-expense')

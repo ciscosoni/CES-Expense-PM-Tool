@@ -1,5 +1,6 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, type Project, type ProjectStatus } from '@prisma/client';
+import { scoreBillableJustification, type BillableBand } from '@ces/evidence';
 import { PrismaService } from '../prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { stripUndefined } from '../common/strip-undefined.js';
@@ -37,6 +38,10 @@ export function visibilityWhere(actor: AuthedUser): Prisma.ProjectWhereInput {
     return { id: { in: [] } };
   }
   return { OR: or };
+}
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
 }
 
 @Injectable()
@@ -80,6 +85,102 @@ export class ProjectsService {
     });
     if (!proj) throw new NotFoundException(`Project ${id} not found`);
     return proj;
+  }
+
+  /**
+   * Billable-justification review (P10 #3): score every billable time log on the
+   * project against {@link scoreBillableJustification} and surface the weak/missing
+   * ones — these are the billed hours a client would dispute first. Read-only and
+   * suggest-only: it flags, it never flips `billable`. Visibility-enforced.
+   */
+  async billableReview(
+    id: string,
+    actor: AuthedUser,
+    opts: { from?: string | undefined; to?: string | undefined } = {},
+  ) {
+    const project = await this.prisma.project.findFirst({
+      where: { id, deletedAt: null, ...visibilityWhere(actor) },
+      select: { id: true, code: true, name: true, billingModel: true },
+    });
+    if (!project) throw new NotFoundException(`Project ${id} not found`);
+
+    const dateFilter: Prisma.DateTimeFilter = {};
+    if (opts.from) dateFilter.gte = new Date(opts.from);
+    if (opts.to) dateFilter.lte = new Date(opts.to);
+
+    const logs = await this.prisma.timeLog.findMany({
+      where: {
+        billable: true,
+        task: { projectId: id, deletedAt: null },
+        ...(opts.from || opts.to ? { date: dateFilter } : {}),
+      },
+      include: {
+        task: { select: { name: true } },
+        user: { select: { displayName: true } },
+      },
+      orderBy: { date: 'desc' },
+    });
+
+    const counts: Record<BillableBand, number> = { SOLID: 0, WEAK: 0, MISSING: 0 };
+    let billableHours = 0;
+    let flaggedHours = 0;
+    const flagged: Array<{
+      id: string;
+      date: string;
+      userName: string;
+      taskName: string;
+      hours: number;
+      notes: string | null;
+      band: BillableBand;
+      reasons: string[];
+      summary: string;
+    }> = [];
+
+    for (const l of logs) {
+      const hours = Number(l.hours.toString());
+      billableHours += hours;
+      const score = scoreBillableJustification({
+        hours,
+        notes: l.notes,
+        taskName: l.task.name,
+      });
+      counts[score.band]++;
+      if (score.band !== 'SOLID') {
+        flaggedHours += hours;
+        flagged.push({
+          id: l.id,
+          date: l.date.toISOString().slice(0, 10),
+          userName: l.user.displayName,
+          taskName: l.task.name,
+          hours,
+          notes: l.notes,
+          band: score.band,
+          reasons: score.reasons,
+          summary: score.summary,
+        });
+      }
+    }
+
+    // MISSING ahead of WEAK, then biggest hours first — worst revenue exposure on top.
+    flagged.sort((a, b) =>
+      a.band === b.band ? b.hours - a.hours : a.band === 'MISSING' ? -1 : 1,
+    );
+
+    return {
+      projectId: project.id,
+      code: project.code,
+      billingModel: project.billingModel,
+      totals: {
+        billableLogs: logs.length,
+        billableHours: round2(billableHours),
+        flaggedLogs: flagged.length,
+        flaggedHours: round2(flaggedHours),
+        solid: counts.SOLID,
+        weak: counts.WEAK,
+        missing: counts.MISSING,
+      },
+      flagged,
+    };
   }
 
   async create(input: CreateProjectDto, actorId: string): Promise<Project> {

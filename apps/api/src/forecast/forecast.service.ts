@@ -3,9 +3,11 @@ import {
   detectExpenseSpike,
   forecastMargin,
   predictUtilizationConflicts,
+  recommendStaffing,
   wellbeingSignal,
   type MarginForecast,
   type SpikePoint,
+  type StaffingPlan,
   type UtilizationRisk,
   type WellbeingSignal,
 } from '@ces/forecast';
@@ -27,6 +29,15 @@ export class ForecastService {
 
   private today(): string {
     return new Date().toISOString().slice(0, 10);
+  }
+
+  /** First→last day of next calendar month (UTC). */
+  private nextMonthWindow(): { start: Date; end: Date } {
+    const now = new Date();
+    return {
+      start: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)),
+      end: new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 2, 0)),
+    };
   }
 
   /** Projected end-of-engagement margin per active project. */
@@ -56,9 +67,7 @@ export class ForecastService {
 
   /** Engineers projected to be overbooked next month. */
   async utilizationRisk(): Promise<{ window: { start: string; end: string }; risks: UtilizationRisk[] }> {
-    const now = new Date();
-    const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1));
-    const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 2, 0));
+    const { start, end } = this.nextMonthWindow();
     const allocs = await this.prisma.allocation.findMany({
       where: { periodStart: { lte: end }, periodEnd: { gte: start } },
       include: { user: { select: { displayName: true } } },
@@ -72,6 +81,66 @@ export class ForecastService {
     }));
     const w = { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
     return { window: w, risks: predictUtilizationConflicts(windows, w) };
+  }
+
+  /**
+   * Next-month staffing plan: who's free, and suggested reassignments that
+   * relieve overbooked engineers. The math is pure (@ces/forecast); this method
+   * only resolves the inputs — active graded engineers with their cost rate
+   * effective on the window, and next-month allocations.
+   */
+  async staffingPlan(): Promise<StaffingPlan> {
+    const { start, end } = this.nextMonthWindow();
+
+    const users = await this.prisma.user.findMany({
+      where: { active: true, gradeId: { not: null } },
+      select: {
+        id: true,
+        displayName: true,
+        gradeId: true,
+        grade: { select: { code: true, seniorityOrder: true } },
+      },
+    });
+
+    // Cost rate per grade effective on the window start (latest effectiveFrom ≤ start).
+    const gradeIds = [...new Set(users.map((u) => u.gradeId!).filter(Boolean))];
+    const rates = await this.prisma.costRate.findMany({
+      where: { gradeId: { in: gradeIds }, effectiveFrom: { lte: start } },
+      orderBy: { effectiveFrom: 'desc' },
+    });
+    const rateByGrade = new Map<string, { ratePerDay: number; currency: string }>();
+    for (const r of rates) {
+      if (!rateByGrade.has(r.gradeId)) rateByGrade.set(r.gradeId, { ratePerDay: Number(r.ratePerDay), currency: r.currency });
+    }
+
+    const engineers = users.map((u) => {
+      const rate = u.gradeId ? rateByGrade.get(u.gradeId) : undefined;
+      return {
+        userId: u.id,
+        userName: u.displayName,
+        gradeCode: u.grade?.code ?? '—',
+        gradeRank: u.grade?.seniorityOrder ?? 0,
+        costPerDay: rate?.ratePerDay ?? 0,
+        currency: rate?.currency ?? 'INR',
+      };
+    });
+
+    const allocs = await this.prisma.allocation.findMany({
+      where: { periodStart: { lte: end }, periodEnd: { gte: start } },
+      include: { project: { select: { code: true } } },
+    });
+    const allocations = allocs.map((a) => ({
+      id: a.id,
+      userId: a.userId,
+      projectId: a.projectId,
+      projectCode: a.project.code,
+      percent: a.percentAllocation,
+      periodStart: a.periodStart.toISOString().slice(0, 10),
+      periodEnd: a.periodEnd.toISOString().slice(0, 10),
+    }));
+
+    const window = { start: start.toISOString().slice(0, 10), end: end.toISOString().slice(0, 10) };
+    return recommendStaffing({ engineers, allocations, window });
   }
 
   /** Org-wide monthly expense trend + spike flag on the latest month. */
@@ -123,12 +192,15 @@ export class ForecastService {
     marginsEroding: number;
     marginsCritical: number;
     overbookedNextMonth: number;
+    benchAvailableNextMonth: number;
+    staffingMovesSuggested: number;
     expenseSpike: boolean;
     wellbeingAtRisk: number;
   }> {
-    const [margins, util, spike, wb] = await Promise.all([
+    const [margins, util, staffing, spike, wb] = await Promise.all([
       this.marginForecasts(),
       this.utilizationRisk(),
+      this.staffingPlan(),
       this.expenseSpike(),
       this.wellbeing(),
     ]);
@@ -136,6 +208,8 @@ export class ForecastService {
       marginsEroding: margins.filter((m) => m.trajectory === 'ERODING').length,
       marginsCritical: margins.filter((m) => m.riskBand === 'CRITICAL').length,
       overbookedNextMonth: util.risks.length,
+      benchAvailableNextMonth: staffing.capacity.filter((c) => c.status === 'BENCH' || c.status === 'AVAILABLE').length,
+      staffingMovesSuggested: staffing.moves.length,
       expenseSpike: spike.result.isSpike,
       wellbeingAtRisk: wb.length,
     };

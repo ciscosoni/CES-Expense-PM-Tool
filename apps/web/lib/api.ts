@@ -69,6 +69,9 @@ export const api = {
   patch<T>(path: string, body?: unknown): Promise<T> {
     return fetch(buildUrl(path), bodyInit('PATCH', body)).then((r) => handle<T>(r));
   },
+  put<T>(path: string, body?: unknown): Promise<T> {
+    return fetch(buildUrl(path), bodyInit('PUT', body)).then((r) => handle<T>(r));
+  },
   delete<T = void>(path: string): Promise<T> {
     return fetch(buildUrl(path), { method: 'DELETE' }).then((r) => handle<T>(r));
   },

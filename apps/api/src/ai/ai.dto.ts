@@ -96,6 +96,14 @@ export const AskSchema = z.object({
 export class AskDto extends createZodDto(AskSchema) {}
 export interface AskDto extends z.infer<typeof AskSchema> {}
 
+// ----- Ask-AI: portfolio-wide grounded Q&A for leadership (P10 #5) -----
+
+export const AskPortfolioSchema = z.object({
+  question: z.string().min(3, 'Ask a question').max(1000),
+});
+export class AskPortfolioDto extends createZodDto(AskPortfolioSchema) {}
+export interface AskPortfolioDto extends z.infer<typeof AskPortfolioSchema> {}
+
 // ----- Auto-extraction: free text (email / message) → structured expense draft (P5) -----
 
 export const ExtractSchema = z.object({
@@ -153,3 +161,66 @@ export const ExpenseDraftSchema = z.object({
   rationale: z.string().max(600).default(''),
 });
 export type ExpenseDraft = z.infer<typeof ExpenseDraftSchema>;
+
+// ----- SOW/PO intake: extract & verify the commercial terms that set the P&L baseline (P10 #2) -----
+
+const Confidence = z.enum(['high', 'medium', 'low']);
+
+/** A single term traced back to a verbatim phrase in the document (evidence-by-default). */
+const cited = <T extends z.ZodTypeAny>(value: T) =>
+  z.object({
+    value: value.nullable(),
+    /** Verbatim phrase the value was read from. null when the term is absent. */
+    sourceQuote: z.string().max(400).nullable().default(null),
+    confidence: Confidence.default('low'),
+  });
+
+export const ExtractTermsSchema = z.object({
+  /** Raw SOW / PO / contract text the Owner pasted. */
+  documentText: z.string().min(40, 'Paste the SOW / PO text').max(60_000),
+});
+export class ExtractTermsDto extends createZodDto(ExtractTermsSchema) {}
+export interface ExtractTermsDto extends z.infer<typeof ExtractTermsSchema> {}
+
+const decimal = z.string().regex(/^\d+(\.\d{1,4})?$/);
+const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/);
+
+const CitedMilestoneSchema = z.object({
+  name: z.string().max(160),
+  value: decimal.nullable().default(null),
+  plannedDate: isoDate.nullable().default(null),
+  sourceQuote: z.string().max(400).nullable().default(null),
+  confidence: Confidence.default('low'),
+});
+
+export const ExtractedTermsSchema = z.object({
+  clientName: cited(z.string().max(200)),
+  endCustomerName: cited(z.string().max(200)),
+  billingModel: cited(z.enum(['FIXED_PRICE', 'T_AND_M', 'MILESTONE'])),
+  contractValue: cited(decimal),
+  currency: z.string().length(3).default('INR'),
+  plannedStart: cited(isoDate),
+  plannedEnd: cited(isoDate),
+  milestones: z.array(CitedMilestoneSchema).max(30).default([]),
+  /** Required commercial terms NOT found in the document — the Owner must supply these. */
+  missing: z.array(z.string().max(120)).max(20).default([]),
+  /** Ambiguities/conflicts that would distort the baseline (tax, dual totals, retention…). */
+  warnings: z.array(z.string().max(300)).max(20).default([]),
+});
+export type ExtractedTerms = z.infer<typeof ExtractedTermsSchema>;
+
+// ----- Billable-justification AI classifier (P10 #3) -----
+
+export const ClassifyBillableSchema = z.object({
+  timeLogId: z.string().uuid(),
+});
+export class ClassifyBillableDto extends createZodDto(ClassifyBillableSchema) {}
+export interface ClassifyBillableDto extends z.infer<typeof ClassifyBillableSchema> {}
+
+/** Suggest-only second opinion on whether logged work is plausibly client-billable. */
+export const BillableVerdictSchema = z.object({
+  verdict: z.enum(['BILLABLE', 'NON_BILLABLE', 'UNCLEAR']),
+  confidence: z.enum(['high', 'medium', 'low']),
+  reason: z.string().max(600).default(''),
+});
+export type BillableVerdict = z.infer<typeof BillableVerdictSchema>;

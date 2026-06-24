@@ -34,6 +34,15 @@ export class ForecastController {
     return this.forecast.utilizationRisk();
   }
 
+  @Get('staffing')
+  @Roles('ADMIN', 'PROJECT_MANAGER', 'PROJECT_OWNER')
+  @ApiOperation({
+    summary: "Next-month capacity (who's free) + suggested reassignments to relieve overbooked engineers. Advisory.",
+  })
+  staffing() {
+    return this.forecast.staffingPlan();
+  }
+
   @Get('expense-spike')
   @Roles('ADMIN')
   @ApiOperation({ summary: 'Org-wide monthly expense trend + spike flag.' })

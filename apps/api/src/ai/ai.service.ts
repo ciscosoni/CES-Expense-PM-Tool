@@ -5,20 +5,27 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import Anthropic from '@anthropic-ai/sdk';
-import { Prisma } from '@prisma/client';
+import { Prisma, type ProjectCategory } from '@prisma/client';
+import { benchmarkEstimate, type CompletedProjectActuals, type EstimateBenchmark } from '@ces/forecast';
 import { Decimal } from '@prisma/client/runtime/library';
 import { PrismaService } from '../prisma.service.js';
 import { AuditService } from '../audit/audit.service.js';
 import { PnlService } from '../projects/pnl.service.js';
+import { DashboardsService } from '../dashboards/dashboards.service.js';
+import { ForecastService } from '../forecast/forecast.service.js';
 import { visibilityWhere } from '../projects/projects.service.js';
 import type { AuthedUser } from '../auth/index.js';
 import {
+  BillableVerdictSchema,
   CommandResultSchema,
   ExpenseDraftSchema,
+  ExtractedTermsSchema,
   OnboardingPlanSchema,
   type AskEntityKind,
+  type BillableVerdict,
   type CommandResult,
   type ExpenseDraft,
+  type ExtractedTerms,
   type OnboardingPlan,
 } from './ai.dto.js';
 
@@ -62,11 +69,15 @@ export class AiService {
   private readonly logger = new Logger(AiService.name);
   private readonly client: Anthropic | null;
   private readonly model: string;
+  /** Cheaper/faster model for high-volume classification (billable checks etc.). */
+  private readonly fastModel: string;
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly pnl: PnlService,
+    private readonly dashboards: DashboardsService,
+    private readonly forecast: ForecastService,
   ) {
     const rawKey = process.env.ANTHROPIC_API_KEY?.trim();
     // The Bicep template stores the literal '_unset_' when no key was supplied
@@ -74,6 +85,7 @@ export class AiService {
     // works (falls back to the mock).
     const apiKey = !rawKey || rawKey === '_unset_' ? '' : rawKey;
     this.model = process.env.ANTHROPIC_MODEL?.trim() || 'claude-opus-4-7';
+    this.fastModel = process.env.ANTHROPIC_FAST_MODEL?.trim() || 'claude-haiku-4-5-20251001';
     this.client = apiKey ? new Anthropic({ apiKey }) : null;
     if (!this.client) {
       this.logger.warn(
@@ -464,6 +476,102 @@ export class AiService {
     }
   }
 
+  /**
+   * Portfolio-wide grounded Q&A for leadership (P10 #5). Loads a live snapshot —
+   * per-project P&L, forward-looking margin forecasts, KPIs, open anomalies — and
+   * answers strictly from it, citing project codes and numbers. Read-only; the
+   * numbers come from the same engines the dashboard uses, so this only narrates
+   * them. Leadership-only (caller enforces ADMIN/FINANCE). Mock fallback.
+   */
+  async askPortfolio(input: { question: string }): Promise<{ answer: string; source: 'claude' | 'mock' }> {
+    const context = await this.gatherPortfolioContext();
+
+    if (!this.client) {
+      return { answer: this.mockPortfolioAnswer(input.question, context), source: 'mock' };
+    }
+
+    const system = this.portfolioSystemPrompt(context);
+    try {
+      const params = {
+        model: this.model,
+        max_tokens: 1500,
+        thinking: { type: 'adaptive' as const },
+        system: [{ type: 'text' as const, text: system, cache_control: { type: 'ephemeral' as const } }],
+        messages: [{ role: 'user' as const, content: input.question }],
+      } satisfies Record<string, unknown>;
+      const response = await this.client.messages.create(
+        params as unknown as Anthropic.Messages.MessageCreateParamsNonStreaming,
+      );
+      const answer = this.extractText(response);
+      return { answer: answer || 'I could not find an answer to that in the portfolio data.', source: 'claude' };
+    } catch (err) {
+      if (err instanceof Anthropic.AuthenticationError) {
+        throw new BadRequestException('ANTHROPIC_API_KEY is invalid — check apps/api/.env.');
+      }
+      if (err instanceof Anthropic.RateLimitError) {
+        throw new BadRequestException('Anthropic rate-limited the request. Try again shortly.');
+      }
+      if (err instanceof Anthropic.APIError) {
+        this.logger.error(`Anthropic API error ${err.status}: ${err.message}`);
+        throw new BadRequestException(`Anthropic API error (${err.status}).`);
+      }
+      throw err;
+    }
+  }
+
+  /** Live portfolio snapshot used to ground {@link askPortfolio}. */
+  private async gatherPortfolioContext(): Promise<Record<string, unknown>> {
+    const [portfolio, kpis, margins, anomalies] = await Promise.all([
+      this.dashboards.portfolio(),
+      this.dashboards.kpis(),
+      this.forecast.marginForecasts(),
+      this.dashboards.anomalies(),
+    ]);
+    return {
+      asOf: new Date().toISOString().slice(0, 10),
+      kpis,
+      projects: portfolio.map((p) => ({
+        code: p.code,
+        name: p.name,
+        status: p.status,
+        revenue: p.revenue,
+        cost: p.cost,
+        marginPercent: p.marginPercent,
+      })),
+      forwardLooking: margins.map((m) => ({
+        code: m.code,
+        currentMarginPercent: m.currentMarginPercent,
+        projectedMarginPercent: m.projectedMarginPercent,
+        trajectory: m.trajectory,
+        riskBand: m.riskBand,
+      })),
+      anomalies,
+    };
+  }
+
+  private portfolioSystemPrompt(context: Record<string, unknown>): string {
+    return `You are the portfolio analyst for CES Tech's leadership (an IT-infrastructure systems integrator in Noida, India). You answer questions about the whole project portfolio from the live snapshot below.
+
+RULES:
+- Answer ONLY from the JSON snapshot. Cite project codes and exact numbers so leadership can trust the answer (this platform's promise is that every figure shows its derivation).
+- This is a CURRENT snapshot — you do NOT have period-over-period history. If asked "why did Q2 margin drop" or about a trend over time, say you can't see historical periods, then answer with what IS here: current margins and the forward-looking trajectory (ERODING / IMPROVING / STABLE) and risk bands per project.
+- Be concise and leadership-facing — lead with the answer, then the supporting numbers. Rank/aggregate across projects when useful.
+- Use each project's own currency; ₹ only when INR. Never invent projects, numbers, or causes.
+
+PORTFOLIO SNAPSHOT (JSON):
+${JSON.stringify(context, null, 2)}`;
+  }
+
+  private mockPortfolioAnswer(question: string, context: Record<string, unknown>): string {
+    const kpis = context.kpis as { portfolioMargin?: number | null } | undefined;
+    const projects = (context.projects as unknown[] | undefined) ?? [];
+    return `(Mock answer — set ANTHROPIC_API_KEY in apps/api/.env for real, grounded portfolio analysis.)
+
+You asked: "${question}"
+
+Snapshot loaded: ${projects.length} project(s), portfolio margin ${kpis?.portfolioMargin ?? '?'}%. The full snapshot (per-project P&L, forward-looking trajectories, KPIs, anomalies) would be sent to Claude to answer precisely and cite the numbers.`;
+  }
+
   /** Load the record + derivation, enforcing visibility. Throws 404 if not allowed. */
   private async gatherEntityContext(
     kind: AskEntityKind,
@@ -768,6 +876,339 @@ Output only the JSON object.`;
       projectCode,
       confidence: 'low',
       rationale: 'Heuristic mock — no AI key set.',
+    };
+  }
+
+  /**
+   * Estimation memory (P10 #3b): benchmark a new project against the realized
+   * economics of closed projects in the same category — average margin achieved
+   * and where the money actually went (cost mix). The stats are pure
+   * ({@link benchmarkEstimate}); this method only resolves the actuals via the
+   * live P&L engine. No LLM, no money decided — advisory context for the Owner.
+   */
+  async estimateBenchmark(input: {
+    category: string;
+    marginPercent?: number | null;
+  }): Promise<EstimateBenchmark> {
+    const VALID: ProjectCategory[] = ['ACI', 'NON_ACI', 'SD_WAN', 'SECURITY', 'AUDIT', 'MANAGED_SERVICES'];
+    if (!VALID.includes(input.category as ProjectCategory)) {
+      return benchmarkEstimate({ category: input.category, candidateMarginPercent: input.marginPercent ?? null, comparables: [] });
+    }
+
+    const closed = await this.prisma.project.findMany({
+      where: { deletedAt: null, status: 'CLOSED', category: input.category as ProjectCategory },
+      select: { id: true, code: true },
+      orderBy: { plannedEnd: 'desc' },
+      take: 25,
+    });
+
+    const comparables = (
+      await Promise.all(
+        closed.map(async (p): Promise<CompletedProjectActuals | null> => {
+          try {
+            const pnl = await this.pnl.forProject(p.id);
+            return {
+              projectId: p.id,
+              code: p.code,
+              revenue: Number(pnl.revenue.amount),
+              marginPercent: pnl.marginPercent,
+              costByCategory: {
+                effort: Number(pnl.costBreakdown.effort),
+                travel: Number(pnl.costBreakdown.travel),
+                lodging: Number(pnl.costBreakdown.lodging),
+                da: Number(pnl.costBreakdown.da),
+                localConveyance: Number(pnl.costBreakdown.localConveyance),
+                otherExpenses: Number(pnl.costBreakdown.otherExpenses),
+                otherDirect: Number(pnl.costBreakdown.otherDirect),
+              },
+            };
+          } catch (err) {
+            this.logger.warn(`estimateBenchmark: skipped ${p.code} (${err instanceof Error ? err.message : 'pnl error'})`);
+            return null;
+          }
+        }),
+      )
+    ).filter((c): c is CompletedProjectActuals => c !== null);
+
+    return benchmarkEstimate({
+      category: input.category,
+      candidateMarginPercent: input.marginPercent ?? null,
+      comparables,
+    });
+  }
+
+  /**
+   * Billable-justification second opinion (P10 #3): given one time log, judge
+   * whether the work described is plausibly billable to the client, grounded in
+   * the task/project context. SUGGEST-ONLY — it never flips `billable` (that
+   * stays a human decision; AI never computes money). Visibility-enforced; uses
+   * the cheaper {@link fastModel} since this runs at time-log volume. Mock
+   * fallback (keyword heuristics) when no API key is set.
+   */
+  async classifyBillable(
+    input: { timeLogId: string },
+    actor: AuthedUser,
+  ): Promise<{ verdict: BillableVerdict; source: 'claude' | 'mock' }> {
+    const log = await this.prisma.timeLog.findFirst({
+      where: { id: input.timeLogId, task: { project: { ...visibilityWhere(actor) } } },
+      include: {
+        task: { select: { name: true, project: { select: { name: true, billingModel: true } } } },
+        user: { select: { displayName: true } },
+      },
+    });
+    if (!log) throw new NotFoundException(`TimeLog ${input.timeLogId} not found`);
+
+    const ctx = {
+      project: log.task.project.name,
+      billingModel: log.task.project.billingModel,
+      task: log.task.name,
+      hours: Number(log.hours.toString()),
+      notes: log.notes ?? '(none)',
+    };
+
+    if (!this.client) {
+      return { verdict: this.mockBillableVerdict(ctx), source: 'mock' };
+    }
+
+    const system = `You are a delivery-finance reviewer at CES Tech, an IT-infrastructure systems integrator in Noida, India. Given ONE logged time entry, judge whether the work described is plausibly BILLABLE to the end client on a services engagement.
+
+Decide from the note + task + project context:
+- BILLABLE: client-facing delivery work (design, build, migration, testing, on-site cutover, documentation tied to the SOW).
+- NON_BILLABLE: internal/overhead work (own training, fixing own laptop, internal meetings, leave/admin, pre-sales, rework caused by our own error).
+- UNCLEAR: the note is too vague to tell.
+
+You are a SUGGESTION for a human PM — you never change anything. If the note is thin, prefer UNCLEAR over guessing. Keep reason to one sentence citing what in the note drove the call. Output only JSON matching the schema.`;
+
+    const user = `Project: ${ctx.project} (billing: ${ctx.billingModel})
+Task: ${ctx.task}
+Hours: ${ctx.hours}
+Justification note: ${ctx.notes}`;
+
+    try {
+      const params = {
+        model: this.fastModel,
+        max_tokens: 600,
+        output_config: { format: { type: 'json_schema', schema: this.billableVerdictJsonSchema() } },
+        system: [{ type: 'text' as const, text: system, cache_control: { type: 'ephemeral' as const } }],
+        messages: [{ role: 'user' as const, content: user }],
+      } satisfies Record<string, unknown>;
+      const response = await this.client.messages.create(
+        params as unknown as Anthropic.Messages.MessageCreateParamsNonStreaming,
+      );
+      const parsed = BillableVerdictSchema.safeParse(this.safeParseJson(this.extractText(response)));
+      if (!parsed.success) {
+        this.logger.warn(`Billable verdict failed schema: ${parsed.error.message}`);
+        throw new BadRequestException('Could not classify that time log.');
+      }
+      return { verdict: parsed.data, source: 'claude' };
+    } catch (err) {
+      if (err instanceof Anthropic.AuthenticationError) {
+        throw new BadRequestException('ANTHROPIC_API_KEY is invalid — check apps/api/.env.');
+      }
+      if (err instanceof Anthropic.RateLimitError) {
+        throw new BadRequestException('Anthropic rate-limited the request. Try again shortly.');
+      }
+      if (err instanceof Anthropic.APIError) {
+        this.logger.error(`Anthropic API error ${err.status}: ${err.message}`);
+        throw new BadRequestException(`Anthropic API error (${err.status}).`);
+      }
+      throw err;
+    }
+  }
+
+  private billableVerdictJsonSchema(): Record<string, unknown> {
+    return {
+      type: 'object',
+      additionalProperties: false,
+      required: ['verdict', 'confidence', 'reason'],
+      properties: {
+        verdict: { type: 'string', enum: ['BILLABLE', 'NON_BILLABLE', 'UNCLEAR'] },
+        confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
+        reason: { type: 'string', maxLength: 600 },
+      },
+    };
+  }
+
+  private mockBillableVerdict(ctx: { task: string; notes: string }): BillableVerdict {
+    const hay = `${ctx.task} ${ctx.notes}`.toLowerCase();
+    const nonBillable =
+      /\b(training|learn|laptop|my (own )?machine|internal meeting|standup|leave|admin|pre[- ]?sales|rework|our (mistake|error))\b/.test(
+        hay,
+      );
+    const billable = /\b(design|build|migrat|configur|deploy|cutover|test|on[- ]?site|document|fabric|tenant|vrf|install)\b/.test(
+      hay,
+    );
+    if (nonBillable) {
+      return { verdict: 'NON_BILLABLE', confidence: 'low', reason: 'Heuristic mock — note mentions internal/overhead work.' };
+    }
+    if (billable) {
+      return { verdict: 'BILLABLE', confidence: 'low', reason: 'Heuristic mock — note mentions client delivery work.' };
+    }
+    return { verdict: 'UNCLEAR', confidence: 'low', reason: 'Heuristic mock — note is too vague. Set ANTHROPIC_API_KEY for a real read.' };
+  }
+
+  /**
+   * SOW/PO intake (P10 #2): read the commercial terms that set the P&L baseline
+   * — client, billing model, contract value, dates, milestones — and trace each
+   * back to a verbatim quote with a confidence. Anything not stated lands in
+   * `missing` (never guessed); baseline-distorting ambiguities land in
+   * `warnings`. This is the "baseline correct on day one" guarantee: the Owner
+   * verifies the money-critical numbers against the document before committing.
+   * Mock fallback (regex heuristics) when no API key is set.
+   */
+  async extractProjectTerms(input: { documentText: string }): Promise<{
+    terms: ExtractedTerms;
+    source: 'claude' | 'mock';
+  }> {
+    if (!this.client) {
+      return { terms: this.mockTerms(input.documentText), source: 'mock' };
+    }
+
+    const today = new Date().toISOString().slice(0, 10);
+    const system = `You read a signed SOW (Statement of Work) or PO (Purchase Order) for CES Tech, an IT-infrastructure systems integrator in Noida, India, and extract the COMMERCIAL terms that set the project's P&L baseline. Accuracy decides real money — a misread contract value or milestone amount corrupts margin from day one.
+
+Return JSON matching the schema. Rules:
+- EVIDENCE-BY-DEFAULT: for every term, copy the VERBATIM phrase it came from into sourceQuote. If a term is not stated, set value to null, add a short label to "missing", and NEVER guess.
+- contractValue and each milestone value: plain decimal string — no symbols, no commas (e.g. "2500000"). currency: 3-letter ISO (₹/Rs/INR → INR, $ → USD, AED → AED). If totals are quoted both inclusive and exclusive of tax, take the PRE-TAX value and say so in warnings.
+- billingModel: FIXED_PRICE (single lump sum), T_AND_M (time & material / rate card / per-day), or MILESTONE (payment tied to deliverables/milestones). Read it from the payment terms.
+- plannedStart / plannedEnd: YYYY-MM-DD (today is ${today}). Resolve a duration ("12 weeks from signing") only if an effective/signing date is stated; otherwise null + add to missing.
+- milestones: every payment or deliverable milestone with its value and date when stated.
+- warnings: flag anything that would distort the baseline — conflicting totals, taxes (GST/TDS), currency ambiguity, advance/retention/hold-back, optional or CR scope counted in the total.
+- confidence: "high" only when the term is explicit and unambiguous in the text.
+
+Output only the JSON object.`;
+
+    try {
+      const params = {
+        model: this.model,
+        max_tokens: 4_000,
+        thinking: { type: 'adaptive' as const },
+        output_config: {
+          format: { type: 'json_schema', schema: this.extractedTermsJsonSchema() },
+        },
+        system: [{ type: 'text' as const, text: system, cache_control: { type: 'ephemeral' as const } }],
+        messages: [{ role: 'user' as const, content: input.documentText }],
+      } satisfies Record<string, unknown>;
+      const response = await this.client.messages.create(
+        params as unknown as Anthropic.Messages.MessageCreateParamsNonStreaming,
+      );
+      const parsed = ExtractedTermsSchema.safeParse(this.safeParseJson(this.extractText(response)));
+      if (!parsed.success) {
+        this.logger.warn(`Term extraction failed schema: ${parsed.error.message}`);
+        throw new BadRequestException('Could not read clean commercial terms from that document.');
+      }
+      return { terms: parsed.data, source: 'claude' };
+    } catch (err) {
+      if (err instanceof Anthropic.AuthenticationError) {
+        throw new BadRequestException('ANTHROPIC_API_KEY is invalid — check apps/api/.env.');
+      }
+      if (err instanceof Anthropic.RateLimitError) {
+        throw new BadRequestException('Anthropic rate-limited the request. Try again shortly.');
+      }
+      if (err instanceof Anthropic.APIError) {
+        this.logger.error(`Anthropic API error ${err.status}: ${err.message}`);
+        throw new BadRequestException(`Anthropic API error (${err.status}).`);
+      }
+      throw err;
+    }
+  }
+
+  private extractedTermsJsonSchema(): Record<string, unknown> {
+    const cited = (valueSchema: Record<string, unknown>) => ({
+      type: 'object',
+      additionalProperties: false,
+      required: ['value', 'sourceQuote', 'confidence'],
+      properties: {
+        value: valueSchema,
+        sourceQuote: { type: ['string', 'null'], maxLength: 400 },
+        confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
+      },
+    });
+    const nullableString = { type: ['string', 'null'], maxLength: 200 };
+    const nullableDecimal = { type: ['string', 'null'], pattern: '^\\d+(\\.\\d{1,4})?$' };
+    const nullableDate = { type: ['string', 'null'], pattern: '^\\d{4}-\\d{2}-\\d{2}$' };
+    return {
+      type: 'object',
+      additionalProperties: false,
+      required: [
+        'clientName',
+        'endCustomerName',
+        'billingModel',
+        'contractValue',
+        'currency',
+        'plannedStart',
+        'plannedEnd',
+        'milestones',
+        'missing',
+        'warnings',
+      ],
+      properties: {
+        clientName: cited(nullableString),
+        endCustomerName: cited(nullableString),
+        billingModel: cited({ type: ['string', 'null'], enum: ['FIXED_PRICE', 'T_AND_M', 'MILESTONE', null] }),
+        contractValue: cited(nullableDecimal),
+        currency: { type: 'string', minLength: 3, maxLength: 3 },
+        plannedStart: cited(nullableDate),
+        plannedEnd: cited(nullableDate),
+        milestones: {
+          type: 'array',
+          maxItems: 30,
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            required: ['name', 'value', 'plannedDate', 'sourceQuote', 'confidence'],
+            properties: {
+              name: { type: 'string', maxLength: 160 },
+              value: nullableDecimal,
+              plannedDate: nullableDate,
+              sourceQuote: { type: ['string', 'null'], maxLength: 400 },
+              confidence: { type: 'string', enum: ['high', 'medium', 'low'] },
+            },
+          },
+        },
+        missing: { type: 'array', maxItems: 20, items: { type: 'string', maxLength: 120 } },
+        warnings: { type: 'array', maxItems: 20, items: { type: 'string', maxLength: 300 } },
+      },
+    };
+  }
+
+  /** Heuristic term extraction so the flow is demonstrable without an API key. */
+  private mockTerms(text: string): ExtractedTerms {
+    const lower = text.toLowerCase();
+    const amountMatch = text.match(/(?:₹|rs\.?|inr|usd|\$)\s*([\d,]+(?:\.\d{1,2})?)/i);
+    const amount = amountMatch?.[1]?.replace(/,/g, '') ?? null;
+    const currency = /\$|usd/i.test(text) ? 'USD' : 'INR';
+    const billingModel: ExtractedTerms['billingModel']['value'] = /time\s*(?:&|and)\s*material|t\s*&\s*m|rate card|per[- ]day/i.test(
+      lower,
+    )
+      ? 'T_AND_M'
+      : /milestone|deliverable-based|payment on/i.test(lower)
+        ? 'MILESTONE'
+        : /fixed[- ]price|lump\s*sum|firm fixed/i.test(lower)
+          ? 'FIXED_PRICE'
+          : null;
+    const dates = text.match(/\d{4}-\d{2}-\d{2}/g) ?? [];
+    const cite = <T>(value: T | null, quote: string | null) => ({
+      value,
+      sourceQuote: quote,
+      confidence: 'low' as const,
+    });
+    const missing: string[] = [];
+    if (!amount) missing.push('contract value');
+    if (!billingModel) missing.push('billing model');
+    if (!dates[0]) missing.push('planned start');
+    if (!dates[1]) missing.push('planned end');
+    return {
+      clientName: cite<string>(null, null),
+      endCustomerName: cite<string>(null, null),
+      billingModel: cite(billingModel, amountMatch ? null : null),
+      contractValue: cite(amount, amountMatch?.[0] ?? null),
+      currency,
+      plannedStart: cite(dates[0] ?? null, dates[0] ?? null),
+      plannedEnd: cite(dates[1] ?? null, dates[1] ?? null),
+      milestones: [],
+      missing,
+      warnings: ['Mock extraction — set ANTHROPIC_API_KEY for a real read with citations. Verify every term.'],
     };
   }
 

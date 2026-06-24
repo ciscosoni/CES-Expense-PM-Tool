@@ -46,6 +46,20 @@ export class ProjectsController {
     return this.projects.get(id);
   }
 
+  @Get(':id/billable-review')
+  @ApiOperation({
+    summary:
+      'Billable time whose justification is weak or missing — the hours a client would dispute first. Read-only flags (scored deterministically); never changes billable status.',
+  })
+  billableReview(
+    @Param('id', new ParseUUIDPipe()) id: string,
+    @CurrentUser() user: AuthedUser,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.projects.billableReview(id, user, { from, to });
+  }
+
   @Post()
   @Roles('ADMIN', 'PROJECT_OWNER')
   @ApiOperation({
